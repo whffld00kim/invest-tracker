@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>투자 지표 트래커</title>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#1d4ed8">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="투자 트래커">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <script src="./initial_data.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #1d4ed8;
+      --primary-light: #dbeafe;
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --header-h: 56px;
+      --tab-h: 60px;
+    }
+
+    html, body { height: 100%; background: var(--bg); font-family: -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; color: var(--text); }
+
+    /* ── HEADER ── */
+    #header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: var(--header-h);
+      background: var(--primary);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
+    #header h1 { color: #fff; font-size: 17px; font-weight: 700; }
+
+    /* ── MAIN ── */
+    #main {
+      position: fixed;
+      top: var(--header-h); bottom: var(--tab-h); left: 0; right: 0;
+      overflow: hidden;
+    }
+
+    .tab-content { display: none; height: 100%; overflow-y: auto; padding: 16px; }
+    .tab-content.active { display: block; }
+
+    /* ── BOTTOM TAB ── */
+    #tabnav {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      height: var(--tab-h);
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      display: grid; grid-template-columns: repeat(3, 1fr);
+    }
+    .tab-btn {
+      border: none; background: transparent;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; cursor: pointer; color: var(--text-muted); font-size: 11px;
+      padding-bottom: 4px; transition: color .15s;
+    }
+    .tab-btn .icon { font-size: 22px; line-height: 1; }
+    .tab-btn.active { color: var(--primary); }
+
+    /* ── CARDS ── */
+    .card { background: var(--card); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); padding: 16px; margin-bottom: 12px; }
+    .card-title { font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: .5px; }
+
+    /* ── HOME TAB ── */
+    #btn-add {
+      width: 100%; padding: 14px;
+      background: var(--primary); color: #fff;
+      border: none; border-radius: 12px;
+      font-size: 16px; font-weight: 600; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(29,78,216,.3);
+    }
+    #btn-add:active { opacity: .85; }
+
+    .entry-list { display: flex; flex-direction: column; gap: 8px; }
+    .entry-item {
+      background: var(--card); border-radius: 10px;
+      padding: 12px 14px; cursor: pointer;
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .entry-date { font-weight: 600; font-size: 14px; }
+    .entry-count { font-size: 12px; color: var(--text-muted); }
+    .entry-del { background: none; border: none; color: #ef4444; font-size: 18px; padding: 4px 8px; cursor: pointer; }
+
+    .empty-state { text-align: center; padding: 48px 24px; color: var(--text-muted); }
+    .empty-state .big { font-size: 48px; margin-bottom: 12px; }
+    .empty-state p { font-size: 14px; line-height: 1.6; }
+
+    /* ── TABLE TAB ── */
+    #tab-table { padding: 0; }
+    .table-wrap { overflow: auto; height: 100%; padding: 12px; }
+    table { border-collapse: collapse; white-space: nowrap; font-size: 13px; }
+    th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: right; }
+    th { background: #f8fafc; font-weight: 600; position: sticky; top: 0; z-index: 2; }
+    th:first-child { left: 0; z-index: 3; text-align: left; }
+    td:first-child { position: sticky; left: 0; background: #f8fafc; font-weight: 500; text-align: left; z-index: 1; }
+    tr:hover td { background: var(--primary-light); }
+    tr:hover td:first-child { background: var(--primary-light); }
+    .no-data { text-align: center; padding: 60px 24px; color: var(--text-muted); }
+
+    /* ── GRAPH TAB ── */
+    .select-wrap {
+      background: var(--card); border-radius: 10px;
+      border: 1px solid var(--border); padding: 8px 12px;
+      margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+    }
+    .select-wrap label { font-size: 13px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+    select { flex: 1; border: none; background: transparent; font-size: 15px; font-weight: 600; color: var(--text); outline: none; cursor: pointer; }
+    .chart-card { background: var(--card); border-radius: 12px; padding: 16px; position: relative; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .chart-canvas-wrap { position: relative; height: 300px; }
+    .chart-hint { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 8px; }
+    #btn-reset-zoom { position: absolute; top: 12px; right: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; padding: 4px 8px; cursor: pointer; color: var(--text-muted); }
+    .latest-val { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
+    .latest-num { font-size: 28px; font-weight: 700; }
+    .latest-label { font-size: 13px; color: var(--text-muted); }
+    .no-chart { text-align: center; padding: 80px 24px; color: var(--text-muted); font-size: 14px; }
+
+    /* ── MODAL ── */
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,.5); backdrop-filter: blur(2px);
+      align-items: flex-end; justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--card); border-radius: 20px 20px 0 0;
+      width: 100%; max-width: 600px;
+      padding: 20px 20px 32px;
+      max-height: 90vh; overflow-y: auto;
+      animation: slideUp .25s ease-out;
+    }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .modal-title { font-size: 18px; font-weight: 700; }
+    .modal-close { background: var(--bg); border: none; width: 30px; height: 30px; border-radius: 50%; font-size: 16px; cursor: pointer; color: var(--text-muted); }
+
+    /* Form */
+    .form-row { margin-bottom: 12px; }
+    .form-row label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; color: var(--text-muted); }
+    .form-row input[type="date"] { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; background: var(--bg); color: var(--text); }
+
+    /* Indicator group */
+    .group-title {
+      font-size: 12px; font-weight: 700; color: var(--primary);
+      text-transform: uppercase; letter-spacing: .5px;
+      padding: 10px 0 6px; border-bottom: 2px solid var(--primary-light);
+      margin-bottom: 8px; margin-top: 4px;
+    }
+    .indicator-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
+    .ind-field { display: flex; flex-direction: column; gap: 3px; }
+    .ind-field label { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+    .ind-field input {
+      padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px;
+      font-size: 14px; background: var(--bg); color: var(--text);
+      width: 100%;
+    }
+    .ind-field input:focus { outline: none; border-color: var(--primary); background: #fff; }
+
+    /* Custom fields */
+    .custom-fields { margin-top: 8px; }
+    .custom-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; margin-bottom: 6px; align-items: center; }
+    .custom-row input { padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; font-size: 13px; background: var(--bg); color: var(--text); }
+    .btn-del-custom { background: none; border: none; color: #ef4444; font-size: 18px; cursor: pointer; padding: 0 4px; }
+    #btn-add-custom {
+      background: none; border: 1px dashed var(--border); border-radius: 7px;
+      padding: 6px 12px; font-size: 13px; color: var(--text-muted);
+      cursor: pointer; width: 100%; margin-top: 4px;
+    }
+
+    /* Save button */
+    #btn-save-entry {
+      width: 100%; padding: 14px; margin-top: 16px;
+      background: var(--primary); color: #fff;
+      border: none; border-radius: 12px;
+      font-size: 16px; font-weight: 600; cursor: pointer;
+    }
+    #btn-save-entry:active { opacity: .85; }
+
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+      background: #0f172a; color: #fff; padding: 10px 20px;
+      border-radius: 20px; font-size: 14px; z-index: 300;
+      pointer-events: none; opacity: 0; transition: opacity .3s;
+      white-space: nowrap;
+    }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header id="header">
+  <h1>📊 투자 지표 트래커</h1>
+</header>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- HOME TAB -->
+  <div id="tab-home" class="tab-content active">
+    <button id="btn-add">✏️ 데이터 직접 입력</button>
+    <div class="card">
+      <div class="card-title">저장된 데이터</div>
+      <div class="entry-list" id="entry-list">
+        <div class="empty-state">
+          <div class="big">📈</div>
+          <p>아직 데이터가 없습니다.<br>위 버튼을 눌러 지표를 입력하세요.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABLE TAB -->
+  <div id="tab-table" class="tab-content">
+    <div class="table-wrap" id="table-wrap">
+      <div class="no-data">데이터가 없습니다.<br>홈에서 데이터를 추가하세요.</div>
+    </div>
+  </div>
+
+  <!-- GRAPH TAB -->
+  <div id="tab-graph" class="tab-content">
+    <div class="select-wrap">
+      <label>지표</label>
+      <select id="indicator-select">
+        <option value="">-- 지표를 선택하세요 --</option>
+      </select>
+    </div>
+    <div id="chart-area">
+      <div class="no-chart">지표를 선택하면 그래프가 표시됩니다.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- BOTTOM TAB NAV -->
+<nav id="tabnav">
+  <button class="tab-btn active" data-tab="home"><span class="icon">🏠</span>홈</button>
+  <button class="tab-btn" data-tab="table"><span class="icon">📋</span>표</button>
+  <button class="tab-btn" data-tab="graph"><span class="icon">📈</span>그래프</button>
+</nav>
+
+<!-- ENTRY MODAL -->
+<div class="modal-backdrop" id="modal-add">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">📝 지표 입력</div>
+      <button class="modal-close" id="close-add">✕</button>
+    </div>
+
+    <div class="form-row">
+      <label>날짜</label>
+      <input type="date" id="entry-date">
+    </div>
+
+    <!-- 금리 -->
+    <div class="group-title">📉 금리</div>
+    <div class="indicator-grid">
+      <div class="ind-field"><label>국채 3년</label><input type="number" step="any" id="f-kr3" placeholder="예) 3.502"></div>
+      <div class="ind-field"><label>국채10년</label><input type="number" step="any" id="f-kr10" placeholder="예) 3.820"></div>
+      <div class="ind-field"><label>미국채 2년</label><input type="number" step="any" id="f-us2" placeholder="예) 3.845"></div>
+      <div class="ind-field"><label>미국채 10년</label><input type="number" step="any" id="f-us10" placeholder="예) 4.338"></div>
+    </div>
+
+    <!-- 환율 -->
+    <div class="group-title">💱 환율</div>
+    <div class="indicator-grid">
+      <div class="ind-field"><label>원달러환율</label><input type="number" step="any" id="f-usd" placeholder="예) 1497.9"></div>
+      <div class="ind-field"><label>달러인덱스</label><input type="number" step="any" id="f-dxy" placeholder="예) 99.29"></div>
+    </div>
+
+    <!-- 주가지수 -->
+    <div class="group-title">📊 주가지수</div>
+    <div class="indicator-grid">
+      <div class="ind-field"><label>코스피지수</label><input type="number" step="any" id="f-kospi" placeholder="예) 5638.20"></div>
+      <div class="ind-field"><label>코스닥지수</label><input type="number" step="any" id="f-kosdaq" placeholder="예) 1134.16"></div>
+      <div class="ind-field"><label>나스닥</label><input type="number" step="any" id="f-nasdaq" placeholder="예) 21995.78"></div>
+      <div class="ind-field"><label>다우존스</label><input type="number" step="any" id="f-dow" placeholder="예) 45803.82"></div>
+      <div class="ind-field"><label>S&amp;P500</label><input type="number" step="any" id="f-sp500" placeholder="예) 6574.96"></div>
+    </div>
+
+    <!-- 원자재 -->
+    <div class="group-title">🪙 원자재</div>
+    <div class="indicator-grid">
+      <div class="ind-field"><label>국제 금 (USD/oz)</label><input type="number" step="any" id="f-gold-intl" placeholder="예) 4331.5"></div>
+      <div class="ind-field"><label>금 환산 (원/g)</label><input type="number" step="any" id="f-gold-krw" placeholder="예) 209,980"></div>
+      <div class="ind-field"><label>금 할인률 (%)</label><input type="number" step="any" id="f-gold-disc" placeholder="예) -2.5"></div>
+      <div class="ind-field"><label>국내 금 (원/g)</label><input type="number" step="any" id="f-gold-kr" placeholder="예) 209,980"></div>
+      <div class="ind-field"><label>구리 (USD/MT)</label><input type="number" step="any" id="f-copper" placeholder="예) 12081.74"></div>
+      <div class="ind-field"><label>원유 (USD/배럴)</label><input type="number" step="any" id="f-oil" placeholder="예) 88.78"></div>
+    </div>
+
+    <!-- 가상자산/주식 -->
+    <div class="group-title">₿ 가상자산 / 주식</div>
+    <div class="indicator-grid">
+      <div class="ind-field"><label>비트코인 (원)</label><input type="number" step="any" id="f-btc" placeholder="예) 105404000"></div>
+      <div class="ind-field"><label>애플 (USD)</label><input type="number" step="any" id="f-apple" placeholder="예) 268.33"></div>
+      <div class="ind-field"><label>삼성전자 (원)</label><input type="number" step="any" id="f-samsung" placeholder="예) 189500"></div>
+      <div class="ind-field"><label>삼성전자우 (원)</label><input type="number" step="any" id="f-samsung-p" placeholder="예) 134700"></div>
+      <div class="ind-field"><label>삼성우비율</label><input type="number" step="any" id="f-samsung-r" placeholder="예) 0.7107"></div>
+    </div>
+
+    <!-- 직접 추가 -->
+    <div class="group-title">➕ 직접 추가</div>
+    <div class="custom-fields" id="custom-fields"></div>
+    <button id="btn-add-custom">+ 항목 추가</button>
+
+    <button id="btn-save-entry">💾 저장</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+const STORAGE_KEY = 'invest_tracker_v2';
+
+// 고정 항목 매핑 (id → 지표명) — 엑셀 경제지표 시트 기준
+const FIXED_FIELDS = [
+  ['f-kr3',       '국채 3년'],
+  ['f-kr10',      '국채10년'],
+  ['f-us2',       '미국채 2년'],
+  ['f-us10',      '미국채 10년'],
+  ['f-usd',       '원달러환율'],
+  ['f-dxy',       '달러인덱스'],
+  ['f-kospi',     '코스피지수'],
+  ['f-kosdaq',    '코스닥지수'],
+  ['f-nasdaq',    '나스닥'],
+  ['f-dow',       '다우존스'],
+  ['f-sp500',     'S&P500'],
+  ['f-gold-intl', '국제 금'],
+  ['f-gold-krw',  '금 환산'],
+  ['f-gold-disc', '금 할인률'],
+  ['f-gold-kr',   '국내 금'],
+  ['f-copper',    '구리'],
+  ['f-oil',       '원유'],
+  ['f-btc',       '비트코인'],
+  ['f-apple',     '애플'],
+  ['f-samsung',   '삼성전자'],
+  ['f-samsung-p', '삼성전자우'],
+  ['f-samsung-r', '삼성우비율'],
+];
+
+// 지표 표시 순서 (그래프/표에서 사용)
+const FIELD_ORDER = FIXED_FIELDS.map(f => f[1]);
+
+// ── 초기 데이터 로드 (최초 실행 시 엑셀 데이터 주입) ─────────────────
+function initData() {
+  const existing = localStorage.getItem(STORAGE_KEY);
+  if (!existing && typeof INITIAL_DATA !== 'undefined') {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_DATA));
+    return INITIAL_DATA;
+  }
+  try { return JSON.parse(existing || '{}'); } catch { return {}; }
+}
+
+// ── STORAGE ───────────────────────────────────────────────────────────
+function loadData() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; }
+}
+function saveData(data) { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+
+// ── TOAST ─────────────────────────────────────────────────────────────
+function showToast(msg, dur = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), dur);
+}
+
+// ── TABS ──────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (tab === 'table') renderTable();
+    if (tab === 'graph') renderIndicatorSelect();
+  });
+});
+
+// ── HOME ──────────────────────────────────────────────────────────────
+function renderHome() {
+  const data = loadData();
+  const dates = Object.keys(data).sort((a, b) => b.localeCompare(a));
+  const list = document.getElementById('entry-list');
+  if (dates.length === 0) {
+    list.innerHTML = `<div class="empty-state"><div class="big">📈</div><p>아직 데이터가 없습니다.<br>위 버튼을 눌러 지표를 입력하세요.</p></div>`;
+    return;
+  }
+  list.innerHTML = dates.map(d => {
+    const count = Object.keys(data[d]).length;
+    return `<div class="entry-item" onclick="openAddModal('${d}')">
+      <div><div class="entry-date">${formatDate(d)}</div><div class="entry-count">지표 ${count}개</div></div>
+      <button class="entry-del" onclick="event.stopPropagation();deleteEntry('${d}')">🗑</button>
+    </div>`;
+  }).join('');
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  const [y, m, day] = d.split('-');
+  return `${y}년 ${parseInt(m)}월 ${parseInt(day)}일`;
+}
+function formatDateShort(d) {
+  if (!d) return '';
+  const [, m, day] = d.split('-');
+  return `${parseInt(m)}/${parseInt(day)}`;
+}
+
+function deleteEntry(date) {
+  if (!confirm(`${formatDate(date)} 데이터를 삭제할까요?`)) return;
+  const data = loadData();
+  delete data[date];
+  saveData(data);
+  renderHome();
+  showToast('삭제되었습니다');
+}
+
+// ── TABLE ──────────────────────────────────────────────────────────────
+function renderTable() {
+  const data = loadData();
+  const dates = Object.keys(data).sort((a, b) => b.localeCompare(a));
+  const wrap = document.getElementById('table-wrap');
+  if (dates.length === 0) {
+    wrap.innerHTML = '<div class="no-data">데이터가 없습니다.<br>홈에서 데이터를 추가하세요.</div>';
+    return;
+  }
+
+  // 순서: FIXED_FIELDS 순 → 나머지 커스텀
+  const allSet = new Set();
+  dates.forEach(d => Object.keys(data[d]).forEach(n => allSet.add(n)));
+  const ordered = FIELD_ORDER.filter(n => allSet.has(n));
+  const extras = [...allSet].filter(n => !FIELD_ORDER.includes(n));
+  const allIndicators = [...ordered, ...extras];
+
+  let html = '<table><thead><tr><th>지표</th>';
+  dates.forEach(d => { html += `<th>${formatDateShort(d)}</th>`; });
+  html += '</tr></thead><tbody>';
+  allIndicators.forEach(name => {
+    html += `<tr><td>${name}</td>`;
+    dates.forEach(d => { html += `<td>${data[d][name] !== undefined ? formatNum(data[d][name]) : '-'}</td>`; });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function formatNum(n) {
+  if (n === undefined || n === null) return '-';
+  const num = parseFloat(n);
+  if (isNaN(num)) return n;
+  if (num >= 100000) return num.toLocaleString('ko-KR', { maximumFractionDigits: 0 });
+  if (num >= 1000)   return num.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
+  if (num >= 10)     return num.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return num.toLocaleString('ko-KR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+}
+
+// ── GRAPH ──────────────────────────────────────────────────────────────
+function renderIndicatorSelect() {
+  const data = loadData();
+  const sel = document.getElementById('indicator-select');
+  const current = sel.value;
+
+  const allSet = new Set();
+  Object.values(data).forEach(e => Object.keys(e).forEach(k => allSet.add(k)));
+
+  // 순서: FIXED_FIELDS 순 → 나머지
+  const ordered = FIELD_ORDER.filter(n => allSet.has(n));
+  const extras = [...allSet].filter(n => !FIELD_ORDER.includes(n));
+  const allNames = [...ordered, ...extras];
+
+  sel.innerHTML = '<option value="">-- 지표를 선택하세요 --</option>';
+  allNames.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    if (name === current) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  if (current && allSet.has(current)) renderChart(current);
+}
+
+document.getElementById('indicator-select').addEventListener('change', e => {
+  if (e.target.value) renderChart(e.target.value);
+  else document.getElementById('chart-area').innerHTML = '<div class="no-chart">지표를 선택하면 그래프가 표시됩니다.</div>';
+});
+
+let chartInstance = null;
+function renderChart(name) {
+  const data = loadData();
+  const dates = Object.keys(data).sort((a, b) => a.localeCompare(b));
+  const values = dates.map(d => data[d][name] !== undefined ? parseFloat(data[d][name]) : null);
+  const validVals = values.filter(v => v !== null);
+  const latestVal = validVals[validVals.length - 1];
+
+  document.getElementById('chart-area').innerHTML = `
+    <div class="chart-card">
+      <div class="latest-val">
+        <span class="latest-num">${latestVal !== undefined ? formatNum(latestVal) : '-'}</span>
+        <span class="latest-label">최근값</span>
+      </div>
+      <div class="chart-canvas-wrap">
+        <canvas id="my-chart"></canvas>
+        <button id="btn-reset-zoom">🔄 전체보기</button>
+      </div>
+      <p class="chart-hint">📱 핀치: 확대/축소 &nbsp;|&nbsp; 드래그: 이동</p>
+    </div>`;
+
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+  chartInstance = new Chart(document.getElementById('my-chart').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: dates.map(formatDateShort),
+      datasets: [{
+        label: name,
+        data: values,
+        borderColor: '#1d4ed8',
+        backgroundColor: 'rgba(29,78,216,0.08)',
+        borderWidth: 2,
+        pointBackgroundColor: '#1d4ed8',
+        pointRadius: dates.length <= 60 ? 3 : 0,
+        pointHoverRadius: 5,
+        fill: true, tension: 0.3, spanGaps: true,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: 11 }, maxRotation: 45, maxTicksLimit: 12 } },
+        y: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: 11 }, callback: v => formatNum(v) } }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => `${name}: ${formatNum(ctx.parsed.y)}` } },
+        zoom: {
+          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoomComplete({ chart }) { adjustY(chart); } },
+          pan:  { enabled: true, mode: 'x', onPanComplete({ chart }) { adjustY(chart); } }
+        }
+      }
+    }
+  });
+
+  document.getElementById('btn-reset-zoom').addEventListener('click', () => {
+    chartInstance.resetZoom(); adjustY(chartInstance);
+  });
+}
+
+function adjustY(chart) {
+  const ds = chart.data.datasets[0].data;
+  const xs = chart.scales.x;
+  const visible = ds.slice(Math.floor(xs.min), Math.ceil(xs.max) + 1).filter(v => v !== null);
+  if (!visible.length) return;
+  const mn = Math.min(...visible), mx = Math.max(...visible);
+  const pad = (mx - mn) * 0.1 || Math.abs(mn) * 0.05 || 1;
+  chart.options.scales.y.min = mn - pad;
+  chart.options.scales.y.max = mx + pad;
+  chart.update('none');
+}
+
+// ── ADD MODAL ─────────────────────────────────────────────────────────
+let customCount = 0;
+
+function openAddModal(editDate = null) {
+  document.getElementById('entry-date').value = editDate || new Date().toISOString().split('T')[0];
+  FIXED_FIELDS.forEach(([id]) => { document.getElementById(id).value = ''; });
+  customCount = 0;
+  document.getElementById('custom-fields').innerHTML = '';
+
+  if (editDate) {
+    const data = loadData();
+    const entry = data[editDate] || {};
+    const fixedNames = FIXED_FIELDS.map(f => f[1]);
+    FIXED_FIELDS.forEach(([id, name]) => {
+      if (entry[name] !== undefined) document.getElementById(id).value = entry[name];
+    });
+    Object.entries(entry).forEach(([name, val]) => {
+      if (!fixedNames.includes(name)) addCustomRow(name, val);
+    });
+  }
+
+  document.getElementById('modal-add').classList.add('open');
+}
+
+function addCustomRow(name = '', val = '') {
+  customCount++;
+  const id = `custom-${customCount}`;
+  const row = document.createElement('div');
+  row.className = 'custom-row';
+  row.id = id;
+  row.innerHTML = `
+    <input type="text" placeholder="지표명" class="custom-name" value="${name}">
+    <input type="number" step="any" placeholder="값" class="custom-val" value="${val}">
+    <button class="btn-del-custom" onclick="document.getElementById('${id}').remove()">✕</button>`;
+  document.getElementById('custom-fields').appendChild(row);
+}
+
+document.getElementById('btn-add').addEventListener('click', () => openAddModal());
+document.getElementById('btn-add-custom').addEventListener('click', () => addCustomRow());
+document.getElementById('close-add').addEventListener('click', () => {
+  document.getElementById('modal-add').classList.remove('open');
+});
+document.getElementById('modal-add').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-add'))
+    document.getElementById('modal-add').classList.remove('open');
+});
+
+document.getElementById('btn-save-entry').addEventListener('click', () => {
+  const date = document.getElementById('entry-date').value;
+  if (!date) { showToast('날짜를 선택하세요'); return; }
+
+  const entry = {};
+  FIXED_FIELDS.forEach(([id, name]) => {
+    const v = document.getElementById(id).value;
+    if (v !== '') entry[name] = parseFloat(v);
+  });
+  document.querySelectorAll('.custom-row').forEach(row => {
+    const name = row.querySelector('.custom-name').value.trim();
+    const val = row.querySelector('.custom-val').value;
+    if (name && val !== '') entry[name] = parseFloat(val);
+  });
+
+  if (Object.keys(entry).length === 0) { showToast('최소 하나의 값을 입력하세요'); return; }
+
+  const data = loadData();
+  data[date] = entry;
+  saveData(data);
+  document.getElementById('modal-add').classList.remove('open');
+  renderHome();
+  showToast(`✅ ${formatDate(date)} 저장 완료 (${Object.keys(entry).length}개 항목)`);
+});
+
+// ── INIT ──────────────────────────────────────────────────────────────
+initData();
+renderHome();
+
+// 서비스워커 등록 (오프라인 지원)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
