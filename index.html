@@ -181,6 +181,14 @@
       cursor: pointer; width: 100%; margin-top: 4px;
     }
 
+    /* 자동계산 필드 */
+    .ind-field input.auto-calc {
+      background: #f0f9ff; color: #0369a1;
+      border-color: #bae6fd; font-weight: 600;
+      cursor: default;
+    }
+    .ind-field .auto-label { font-size: 10px; color: #0284c7; margin-top: 2px; }
+
     /* Save button */
     #btn-save-entry {
       width: 100%; padding: 14px; margin-top: 16px;
@@ -297,8 +305,8 @@
     <div class="group-title">🪙 원자재</div>
     <div class="indicator-grid">
       <div class="ind-field"><label>국제 금 (USD/oz)</label><input type="number" step="any" id="f-gold-intl" placeholder="예) 4331.5"></div>
-      <div class="ind-field"><label>금 환산 (원/g)</label><input type="number" step="any" id="f-gold-krw" placeholder="예) 209,980"></div>
-      <div class="ind-field"><label>금 할인률 (%)</label><input type="number" step="any" id="f-gold-disc" placeholder="예) -2.5"></div>
+      <div class="ind-field"><label>금 환산 (원/g)</label><input type="number" step="any" id="f-gold-krw" class="auto-calc" readonly placeholder="자동계산"><span class="auto-label">= 국제금 × 환율 ÷ 31.1</span></div>
+      <div class="ind-field"><label>금 할인률 (%)</label><input type="number" step="any" id="f-gold-disc" class="auto-calc" readonly placeholder="자동계산"><span class="auto-label">= (국내금 ÷ 금환산 − 1) × 100</span></div>
       <div class="ind-field"><label>국내 금 (원/g)</label><input type="number" step="any" id="f-gold-kr" placeholder="예) 209,980"></div>
       <div class="ind-field"><label>구리 (USD/MT)</label><input type="number" step="any" id="f-copper" placeholder="예) 12081.74"></div>
       <div class="ind-field"><label>원유 (USD/배럴)</label><input type="number" step="any" id="f-oil" placeholder="예) 88.78"></div>
@@ -308,10 +316,9 @@
     <div class="group-title">₿ 가상자산 / 주식</div>
     <div class="indicator-grid">
       <div class="ind-field"><label>비트코인 (원)</label><input type="number" step="any" id="f-btc" placeholder="예) 105404000"></div>
-      <div class="ind-field"><label>애플 (USD)</label><input type="number" step="any" id="f-apple" placeholder="예) 268.33"></div>
       <div class="ind-field"><label>삼성전자 (원)</label><input type="number" step="any" id="f-samsung" placeholder="예) 189500"></div>
       <div class="ind-field"><label>삼성전자우 (원)</label><input type="number" step="any" id="f-samsung-p" placeholder="예) 134700"></div>
-      <div class="ind-field"><label>삼성우비율</label><input type="number" step="any" id="f-samsung-r" placeholder="예) 0.7107"></div>
+      <div class="ind-field"><label>삼성우비율</label><input type="number" step="any" id="f-samsung-r" class="auto-calc" readonly placeholder="자동계산"><span class="auto-label">= 삼성전자우 ÷ 삼성전자</span></div>
     </div>
 
     <!-- 직접 추가 -->
@@ -349,7 +356,6 @@ const FIXED_FIELDS = [
   ['f-copper',    '구리'],
   ['f-oil',       '원유'],
   ['f-btc',       '비트코인'],
-  ['f-apple',     '애플'],
   ['f-samsung',   '삼성전자'],
   ['f-samsung-p', '삼성전자우'],
   ['f-samsung-r', '삼성우비율'],
@@ -413,19 +419,20 @@ function renderHome() {
   }).join('');
 }
 
+// MM-DD, YY 형식 (예: 03-24, 26)
 function formatDate(d) {
   if (!d) return '';
   const [y, m, day] = d.split('-');
-  return `${y}년 ${parseInt(m)}월 ${parseInt(day)}일`;
+  return `${m}-${day}, ${y.slice(2)}`;
 }
 function formatDateShort(d) {
   if (!d) return '';
-  const [, m, day] = d.split('-');
-  return `${parseInt(m)}/${parseInt(day)}`;
+  const [y, m, day] = d.split('-');
+  return `${m}-${day}, ${y.slice(2)}`;
 }
 
 function deleteEntry(date) {
-  if (!confirm(`${formatDate(date)} 데이터를 삭제할까요?`)) return;
+  if (!confirm(`${formatDate(date)} 데이터를 삭제할까요?`)) return; // MM-DD, YY 형식
   const data = loadData();
   delete data[date];
   saveData(data);
@@ -436,7 +443,7 @@ function deleteEntry(date) {
 // ── TABLE ──────────────────────────────────────────────────────────────
 function renderTable() {
   const data = loadData();
-  const dates = Object.keys(data).sort((a, b) => b.localeCompare(a));
+  const dates = Object.keys(data).sort((a, b) => b.localeCompare(a)); // 최신 날짜 왼쪽, 오래된 날짜 오른쪽
   const wrap = document.getElementById('table-wrap');
   if (dates.length === 0) {
     wrap.innerHTML = '<div class="no-data">데이터가 없습니다.<br>홈에서 데이터를 추가하세요.</div>';
@@ -596,6 +603,10 @@ function openAddModal(editDate = null) {
     });
   }
 
+  // 자동계산 필드 갱신
+  calcGoldFields();
+  calcSamsungRatio();
+
   document.getElementById('modal-add').classList.add('open');
 }
 
@@ -611,6 +622,48 @@ function addCustomRow(name = '', val = '') {
     <button class="btn-del-custom" onclick="document.getElementById('${id}').remove()">✕</button>`;
   document.getElementById('custom-fields').appendChild(row);
 }
+
+// ── 자동계산 ────────────────────────────────────────────────────────
+function calcGoldFields() {
+  const goldIntl = parseFloat(document.getElementById('f-gold-intl').value);
+  const usd      = parseFloat(document.getElementById('f-usd').value);
+  const goldKr   = parseFloat(document.getElementById('f-gold-kr').value);
+
+  // 금 환산 (원/g) = 국제금(USD/oz) × 환율(원/USD) ÷ 31.1035(g/oz)
+  let goldKrw = '';
+  if (!isNaN(goldIntl) && !isNaN(usd)) {
+    goldKrw = Math.round(goldIntl * usd / 31.1035);
+    document.getElementById('f-gold-krw').value = goldKrw;
+  } else {
+    document.getElementById('f-gold-krw').value = '';
+  }
+
+  // 금 할인률 (%) = (국내금 ÷ 금환산 − 1) × 100
+  if (!isNaN(goldKr) && goldKrw !== '' && goldKrw !== 0) {
+    const disc = ((goldKr / goldKrw) - 1) * 100;
+    document.getElementById('f-gold-disc').value = disc.toFixed(2);
+  } else {
+    document.getElementById('f-gold-disc').value = '';
+  }
+}
+
+function calcSamsungRatio() {
+  const sam  = parseFloat(document.getElementById('f-samsung').value);
+  const samp = parseFloat(document.getElementById('f-samsung-p').value);
+  if (!isNaN(sam) && !isNaN(samp) && sam !== 0) {
+    document.getElementById('f-samsung-r').value = (samp / sam).toFixed(4);
+  } else {
+    document.getElementById('f-samsung-r').value = '';
+  }
+}
+
+// 관련 입력 필드에 이벤트 연결
+['f-gold-intl', 'f-usd', 'f-gold-kr'].forEach(id =>
+  document.getElementById(id).addEventListener('input', calcGoldFields)
+);
+['f-samsung', 'f-samsung-p'].forEach(id =>
+  document.getElementById(id).addEventListener('input', calcSamsungRatio)
+);
 
 document.getElementById('btn-add').addEventListener('click', () => openAddModal());
 document.getElementById('btn-add-custom').addEventListener('click', () => addCustomRow());
