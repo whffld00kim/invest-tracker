@@ -1,8 +1,10 @@
-const CACHE = 'invest-tracker-v2';
+const CACHE = 'invest-tracker-v4';
 const ASSETS = [
   './index.html',
   './manifest.json',
   './initial_data.js',
+  './icon-192.png',
+  './icon-512.png',
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js',
   'https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js',
   'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js',

@@ -305,8 +305,8 @@
     <div class="group-title">🪙 원자재</div>
     <div class="indicator-grid">
       <div class="ind-field"><label>국제 금 (USD/oz)</label><input type="number" step="any" id="f-gold-intl" placeholder="예) 4331.5"></div>
-      <div class="ind-field"><label>금 환산 (원/g)</label><input type="number" step="any" id="f-gold-krw" class="auto-calc" readonly placeholder="자동계산"><span class="auto-label">= 국제금 × 환율 ÷ 31.1</span></div>
-      <div class="ind-field"><label>금 할인률 (%)</label><input type="number" step="any" id="f-gold-disc" class="auto-calc" readonly placeholder="자동계산"><span class="auto-label">= (국내금 ÷ 금환산 − 1) × 100</span></div>
+      <div class="ind-field"><label>금 환산 (원/g)</label><input type="number" step="any" id="f-gold-krw" class="auto-calc" readonly placeholder="자동계산"><span class="auto-label">= 국제금 × 환율 ÷ 28.3495</span></div>
+      <div class="ind-field"><label>금 할인률 (%)</label><input type="number" step="any" id="f-gold-disc" class="auto-calc" readonly placeholder="자동계산"><span class="auto-label">= (금환산 − 국내금) ÷ 금환산 × 100</span></div>
       <div class="ind-field"><label>국내 금 (원/g)</label><input type="number" step="any" id="f-gold-kr" placeholder="예) 209,980"></div>
       <div class="ind-field"><label>구리 (USD/MT)</label><input type="number" step="any" id="f-copper" placeholder="예) 12081.74"></div>
       <div class="ind-field"><label>원유 (USD/배럴)</label><input type="number" step="any" id="f-oil" placeholder="예) 88.78"></div>
@@ -335,6 +335,7 @@
 
 <script>
 const STORAGE_KEY = 'invest_tracker_v2';
+const INITIAL_DATA_VER = 'v3'; // 기본 데이터 버전 — 올리면 localStorage 강제 재로드
 
 // 고정 항목 매핑 (id → 지표명) — 엑셀 경제지표 시트 기준
 const FIXED_FIELDS = [
@@ -364,12 +365,24 @@ const FIXED_FIELDS = [
 // 지표 표시 순서 (그래프/표에서 사용)
 const FIELD_ORDER = FIXED_FIELDS.map(f => f[1]);
 
-// ── 초기 데이터 로드 (최초 실행 시 엑셀 데이터 주입) ─────────────────
+// ── 초기 데이터 로드 ─────────────────────────────────────────────────
 function initData() {
   const existing = localStorage.getItem(STORAGE_KEY);
-  if (!existing && typeof INITIAL_DATA !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_DATA));
-    return INITIAL_DATA;
+  const loadedVer = localStorage.getItem(STORAGE_KEY + '_ver');
+
+  if (typeof INITIAL_DATA !== 'undefined' && loadedVer !== INITIAL_DATA_VER) {
+    // 새 버전 감지 → 기본 데이터 재로드. INITIAL_DATA에 없는 날짜(수동 입력)는 유지.
+    const userEntries = {};
+    if (existing) {
+      try {
+        const old = JSON.parse(existing);
+        Object.keys(old).forEach(d => { if (!INITIAL_DATA[d]) userEntries[d] = old[d]; });
+      } catch {}
+    }
+    const merged = { ...INITIAL_DATA, ...userEntries };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    localStorage.setItem(STORAGE_KEY + '_ver', INITIAL_DATA_VER);
+    return merged;
   }
   try { return JSON.parse(existing || '{}'); } catch { return {}; }
 }
@@ -508,11 +521,30 @@ document.getElementById('indicator-select').addEventListener('change', e => {
   else document.getElementById('chart-area').innerHTML = '<div class="no-chart">지표를 선택하면 그래프가 표시됩니다.</div>';
 });
 
+// 차트에서 표시하지 않을 이상값 판별
+function isChartOutlier(name, v) {
+  if (v === 0) return true;
+  if (name === '금 할인률' && (v > 50 || v < -50)) return true;
+  if (name === '금 환산' && v < 10000) return true;
+  return false;
+}
+
 let chartInstance = null;
 function renderChart(name) {
   const data = loadData();
-  const dates = Object.keys(data).sort((a, b) => a.localeCompare(b));
-  const values = dates.map(d => data[d][name] !== undefined ? parseFloat(data[d][name]) : null);
+  const allDates = Object.keys(data).sort((a, b) => a.localeCompare(b));
+  // 해당 지표의 데이터가 처음 시작되는 날짜부터만 표시
+  const firstIdx = allDates.findIndex(d => {
+    const v = data[d][name];
+    return v !== undefined && !isChartOutlier(name, parseFloat(v));
+  });
+  const dates = firstIdx === -1 ? allDates : allDates.slice(firstIdx);
+  const values = dates.map(d => {
+    const v = data[d][name];
+    if (v === undefined) return null;
+    const num = parseFloat(v);
+    return isChartOutlier(name, num) ? null : num;
+  });
   const validVals = values.filter(v => v !== null);
   const latestVal = validVals[validVals.length - 1];
 
@@ -629,18 +661,18 @@ function calcGoldFields() {
   const usd      = parseFloat(document.getElementById('f-usd').value);
   const goldKr   = parseFloat(document.getElementById('f-gold-kr').value);
 
-  // 금 환산 (원/g) = 국제금(USD/oz) × 환율(원/USD) ÷ 31.1035(g/oz)
+  // 금 환산 (원/g) = 국제금(USD/oz) × 환율(원/USD) ÷ 28.3495(g/oz)
   let goldKrw = '';
   if (!isNaN(goldIntl) && !isNaN(usd)) {
-    goldKrw = Math.round(goldIntl * usd / 31.1035);
+    goldKrw = Math.round(goldIntl * usd / 28.3495);
     document.getElementById('f-gold-krw').value = goldKrw;
   } else {
     document.getElementById('f-gold-krw').value = '';
   }
 
-  // 금 할인률 (%) = (국내금 ÷ 금환산 − 1) × 100
+  // 금 할인률 (%) = (금환산 − 국내금) ÷ 금환산 × 100
   if (!isNaN(goldKr) && goldKrw !== '' && goldKrw !== 0) {
-    const disc = ((goldKr / goldKrw) - 1) * 100;
+    const disc = ((goldKrw - goldKr) / goldKrw) * 100;
     document.getElementById('f-gold-disc').value = disc.toFixed(2);
   } else {
     document.getElementById('f-gold-disc').value = '';
