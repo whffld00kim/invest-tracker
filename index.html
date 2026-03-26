@@ -121,9 +121,9 @@
     .select-wrap label { font-size: 13px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
     select { flex: 1; border: none; background: transparent; font-size: 15px; font-weight: 600; color: var(--text); outline: none; cursor: pointer; }
     .chart-card { background: var(--card); border-radius: 12px; padding: 16px; position: relative; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    .chart-canvas-wrap { position: relative; height: 300px; }
+    .chart-canvas-wrap { height: 300px; }
     .chart-hint { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 8px; }
-    #btn-reset-zoom { position: absolute; top: 12px; right: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; padding: 4px 8px; cursor: pointer; color: var(--text-muted); }
+    #btn-reset-zoom { display: block; margin: 8px auto 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; padding: 4px 12px; cursor: pointer; color: var(--text-muted); }
     .latest-val { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
     .latest-num { font-size: 28px; font-weight: 700; }
     .latest-label { font-size: 13px; color: var(--text-muted); }
@@ -556,8 +556,8 @@ function renderChart(name) {
       </div>
       <div class="chart-canvas-wrap">
         <canvas id="my-chart"></canvas>
-        <button id="btn-reset-zoom">🔄 전체보기</button>
       </div>
+      <button id="btn-reset-zoom">🔄 전체보기</button>
       <p class="chart-hint">📱 핀치: 확대/축소 &nbsp;|&nbsp; 드래그: 이동</p>
     </div>`;
 
