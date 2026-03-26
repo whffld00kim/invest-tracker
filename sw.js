@@ -28,9 +28,25 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
-// 요청 시 캐시 우선, 없으면 네트워크
+// HTML/JS 파일은 네트워크 우선 (항상 최신 파일), 나머지는 캐시 우선
 self.addEventListener('fetch', e => {
-  e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request))
-  );
+  const url = e.request.url;
+  const isAppFile = url.endsWith('.html') || url.endsWith('.js');
+  if (isAppFile) {
+    // 네트워크 우선: 최신 파일 fetch, 실패 시 캐시 fallback
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, copy));
+          return res;
+        })
+        .catch(() => caches.match(e.request))
+    );
+  } else {
+    // CDN 라이브러리 등은 캐시 우선 (오프라인 지원)
+    e.respondWith(
+      caches.match(e.request).then(cached => cached || fetch(e.request))
+    );
+  }
 });
