@@ -85,6 +85,19 @@
     }
     #btn-add:active { opacity: .85; }
 
+    /* ── 백업/복원 ── */
+    .backup-row { display: flex; gap: 8px; margin-bottom: 16px; }
+    .btn-backup, .btn-restore {
+      flex: 1; padding: 10px 8px;
+      border: 1.5px solid var(--border); border-radius: 10px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-backup { background: #f0fdf4; color: #166534; border-color: #86efac; }
+    .btn-backup:active { background: #dcfce7; }
+    .btn-restore { background: #fff7ed; color: #9a3412; border-color: #fdba74; }
+    .btn-restore:active { background: #ffedd5; }
+
     .entry-list { display: flex; flex-direction: column; gap: 8px; }
     .entry-item {
       background: var(--card); border-radius: 10px;
@@ -124,9 +137,22 @@
     .chart-canvas-wrap { height: 300px; }
     .chart-hint { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 8px; }
     #btn-reset-zoom { display: block; margin: 8px auto 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; padding: 4px 12px; cursor: pointer; color: var(--text-muted); }
-    .latest-val { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
+    .latest-val { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
     .latest-num { font-size: 28px; font-weight: 700; }
     .latest-label { font-size: 13px; color: var(--text-muted); }
+
+    /* ── 최고값 표시 ── */
+    .peak-row {
+      display: flex; align-items: center; gap: 10px;
+      background: #fefce8; border: 1px solid #fde047;
+      border-radius: 8px; padding: 7px 12px; margin-bottom: 12px;
+    }
+    .peak-label { font-size: 11px; font-weight: 700; color: #854d0e; white-space: nowrap; }
+    .peak-val   { font-size: 15px; font-weight: 700; color: #78350f; }
+    .peak-date  { font-size: 11px; color: #92400e; flex: 1; }
+    .peak-diff  { font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .peak-diff.neg { color: #dc2626; }
+    .peak-diff.pos { color: #16a34a; }
     .no-chart { text-align: center; padding: 80px 24px; color: var(--text-muted); font-size: 14px; }
 
     /* ── MODAL ── */
@@ -222,6 +248,11 @@
   <!-- HOME TAB -->
   <div id="tab-home" class="tab-content active">
     <button id="btn-add">✏️ 데이터 직접 입력</button>
+    <div class="backup-row">
+      <button class="btn-backup" id="btn-backup">💾 백업 (내보내기)</button>
+      <button class="btn-restore" id="btn-restore">📂 복원 (불러오기)</button>
+    </div>
+    <input type="file" id="restore-file-input" accept=".json" style="display:none">
     <div class="card">
       <div class="card-title">저장된 데이터</div>
       <div class="entry-list" id="entry-list">
@@ -335,7 +366,7 @@
 
 <script>
 const STORAGE_KEY = 'invest_tracker_v2';
-const INITIAL_DATA_VER = 'v3'; // 기본 데이터 버전 — 올리면 localStorage 강제 재로드
+const INITIAL_DATA_VER = 'v4'; // 기본 데이터 버전 — 올리면 localStorage 강제 재로드
 
 // 고정 항목 매핑 (id → 지표명) — 엑셀 경제지표 시트 기준
 const FIXED_FIELDS = [
@@ -554,6 +585,12 @@ function renderChart(name) {
         <span class="latest-num">${latestVal !== undefined ? formatNum(latestVal) : '-'}</span>
         <span class="latest-label">최근값</span>
       </div>
+      <div class="peak-row" id="peak-row">
+        <span class="peak-label">🏆 기간 최고</span>
+        <span class="peak-val" id="peak-val">-</span>
+        <span class="peak-date" id="peak-date"></span>
+        <span class="peak-diff" id="peak-diff"></span>
+      </div>
       <div class="chart-canvas-wrap">
         <canvas id="my-chart"></canvas>
       </div>
@@ -597,21 +634,54 @@ function renderChart(name) {
     }
   });
 
+  // 초기 렌더 후 최고값 표시
+  setTimeout(() => adjustY(chartInstance), 100);
+
   document.getElementById('btn-reset-zoom').addEventListener('click', () => {
-    chartInstance.resetZoom(); adjustY(chartInstance);
+    chartInstance.resetZoom(); setTimeout(() => adjustY(chartInstance), 50);
   });
 }
 
 function adjustY(chart) {
   const ds = chart.data.datasets[0].data;
+  const labels = chart.data.labels;
   const xs = chart.scales.x;
-  const visible = ds.slice(Math.floor(xs.min), Math.ceil(xs.max) + 1).filter(v => v !== null);
+  if (!xs || xs.min == null || xs.max == null || isNaN(xs.min) || isNaN(xs.max)) return;
+  const minIdx = Math.max(0, Math.floor(xs.min)), maxIdx = Math.min(ds.length - 1, Math.ceil(xs.max));
+  const visibleSlice = ds.slice(minIdx, maxIdx + 1);
+  const visible = visibleSlice.filter(v => v !== null);
   if (!visible.length) return;
   const mn = Math.min(...visible), mx = Math.max(...visible);
   const pad = (mx - mn) * 0.1 || Math.abs(mn) * 0.05 || 1;
   chart.options.scales.y.min = mn - pad;
   chart.options.scales.y.max = mx + pad;
   chart.update('none');
+
+  // 최고값 표시 업데이트
+  const peakVal = document.getElementById('peak-val');
+  const peakDate = document.getElementById('peak-date');
+  const peakDiff = document.getElementById('peak-diff');
+  if (!peakVal) return;
+
+  let peakV = -Infinity, peakIdx = -1;
+  for (let i = minIdx; i <= maxIdx; i++) {
+    const v = ds[i];
+    if (v !== null && v > peakV) { peakV = v; peakIdx = i; }
+  }
+  if (peakIdx === -1) return;
+
+  peakVal.textContent = formatNum(peakV);
+  peakDate.textContent = labels[peakIdx] || '';
+
+  // 최근값(전체 데이터의 마지막 유효값)과 비교
+  const allValid = ds.filter(v => v !== null);
+  const latest = allValid[allValid.length - 1];
+  if (latest !== undefined && latest !== 0) {
+    const pct = ((peakV - latest) / latest * 100).toFixed(1);
+    const sign = pct > 0 ? '+' : '';
+    peakDiff.textContent = `현재 대비 ${sign}${pct}%`;
+    peakDiff.className = 'peak-diff ' + (pct >= 0 ? 'pos' : 'neg');
+  }
 }
 
 // ── ADD MODAL ─────────────────────────────────────────────────────────
@@ -696,6 +766,49 @@ function calcSamsungRatio() {
 ['f-samsung', 'f-samsung-p'].forEach(id =>
   document.getElementById(id).addEventListener('input', calcSamsungRatio)
 );
+
+// ── 백업 (내보내기) ──────────────────────────────────────────────────
+document.getElementById('btn-backup').addEventListener('click', () => {
+  const data = loadData();
+  const dateCount = Object.keys(data).length;
+  if (dateCount === 0) { showToast('백업할 데이터가 없습니다.'); return; }
+  const now = new Date();
+  const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+  const filename = `투자지표_백업_${stamp}.json`;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+  showToast(`✅ ${dateCount}개 날짜 백업 완료`);
+});
+
+// ── 복원 (불러오기) ──────────────────────────────────────────────────
+document.getElementById('btn-restore').addEventListener('click', () => {
+  if (!confirm('현재 데이터에 백업 파일을 병합합니다.\n(같은 날짜는 백업 파일로 덮어씁니다)\n계속하시겠습니까?')) return;
+  document.getElementById('restore-file-input').click();
+});
+
+document.getElementById('restore-file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const imported = JSON.parse(ev.target.result);
+      if (typeof imported !== 'object' || Array.isArray(imported)) throw new Error('형식 오류');
+      const current = loadData();
+      const merged = { ...current, ...imported };
+      saveData(merged);
+      renderHome();
+      showToast(`✅ ${Object.keys(imported).length}개 날짜 복원 완료`);
+    } catch {
+      showToast('❌ 파일 형식이 올바르지 않습니다.');
+    }
+    e.target.value = '';
+  };
+  reader.readAsText(file);
+});
 
 document.getElementById('btn-add').addEventListener('click', () => openAddModal());
 document.getElementById('btn-add-custom').addEventListener('click', () => addCustomRow());
