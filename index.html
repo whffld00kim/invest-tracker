@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>투자 지표 트래커</title>
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#1d4ed8">
@@ -433,16 +433,19 @@ function showToast(msg, dur = 2500) {
 }
 
 // ── TABS ──────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
+  if (btn) btn.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab === 'table') renderTable();
+  if (tab === 'graph') renderIndicatorSelect();
+  sessionStorage.setItem('activeTab', tab);
+}
+
 document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const tab = btn.dataset.tab;
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('tab-' + tab).classList.add('active');
-    if (tab === 'table') renderTable();
-    if (tab === 'graph') renderIndicatorSelect();
-  });
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
 // ── HOME ──────────────────────────────────────────────────────────────
@@ -527,7 +530,7 @@ function formatNum(n) {
 function renderIndicatorSelect() {
   const data = loadData();
   const sel = document.getElementById('indicator-select');
-  const current = sel.value;
+  const current = sel.value || sessionStorage.getItem('selectedIndicator') || '';
 
   const allSet = new Set();
   Object.values(data).forEach(e => Object.keys(e).forEach(k => allSet.add(k)));
@@ -548,7 +551,10 @@ function renderIndicatorSelect() {
 }
 
 document.getElementById('indicator-select').addEventListener('change', e => {
-  if (e.target.value) renderChart(e.target.value);
+  if (e.target.value) {
+    sessionStorage.setItem('selectedIndicator', e.target.value);
+    renderChart(e.target.value);
+  }
   else document.getElementById('chart-area').innerHTML = '<div class="no-chart">지표를 선택하면 그래프가 표시됩니다.</div>';
 });
 
@@ -848,6 +854,12 @@ document.getElementById('btn-save-entry').addEventListener('click', () => {
 // ── INIT ──────────────────────────────────────────────────────────────
 initData();
 renderHome();
+
+// 폴드폰 화면 전환 등으로 재로드 시 이전 탭·지표 복원
+(function restoreSession() {
+  const tab = sessionStorage.getItem('activeTab');
+  if (tab && tab !== 'home') switchTab(tab);
+})();
 
 // 서비스워커 등록 (오프라인 지원)
 if ('serviceWorker' in navigator) {
