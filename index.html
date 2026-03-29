@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>투자 지표 트래커</title>
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#1d4ed8">
@@ -51,6 +51,18 @@
 
     .tab-content { display: none; height: 100%; overflow-y: auto; padding: 16px; }
     .tab-content.active { display: block; }
+
+    /* ── 스와이프 애니메이션 ── */
+    @keyframes swipeInFromRight {
+      from { transform: translateX(30%); opacity: 0.2; }
+      to   { transform: translateX(0);   opacity: 1;   }
+    }
+    @keyframes swipeInFromLeft {
+      from { transform: translateX(-30%); opacity: 0.2; }
+      to   { transform: translateX(0);    opacity: 1;   }
+    }
+    .tab-content.active.swipe-right { animation: swipeInFromRight 0.22s ease-out; }
+    .tab-content.active.swipe-left  { animation: swipeInFromLeft  0.22s ease-out; }
 
     /* ── BOTTOM TAB ── */
     #tabnav {
@@ -366,7 +378,7 @@
 
 <script>
 const STORAGE_KEY = 'invest_tracker_v2';
-const INITIAL_DATA_VER = 'v4'; // 기본 데이터 버전 — 올리면 localStorage 강제 재로드
+const INITIAL_DATA_VER = 'v3'; // 기본 데이터 버전 — 올리면 localStorage 강제 재로드
 
 // 고정 항목 매핑 (id → 지표명) — 엑셀 경제지표 시트 기준
 const FIXED_FIELDS = [
@@ -433,20 +445,59 @@ function showToast(msg, dur = 2500) {
 }
 
 // ── TABS ──────────────────────────────────────────────────────────────
-function switchTab(tab) {
+const TAB_ORDER = ['home', 'table', 'graph'];
+
+function getActiveTab() {
+  return document.querySelector('.tab-btn.active')?.dataset.tab || 'home';
+}
+
+function switchTab(tab, swipeDir) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  const btn = document.querySelector(`.tab-btn[data-tab="${tab}"]`);
-  if (btn) btn.classList.add('active');
-  document.getElementById('tab-' + tab).classList.add('active');
+  document.querySelectorAll('.tab-content').forEach(c => {
+    c.classList.remove('active', 'swipe-right', 'swipe-left');
+  });
+  document.querySelector(`.tab-btn[data-tab="${tab}"]`).classList.add('active');
+  const content = document.getElementById('tab-' + tab);
+  content.classList.add('active');
+  if (swipeDir) content.classList.add(swipeDir);
   if (tab === 'table') renderTable();
   if (tab === 'graph') renderIndicatorSelect();
-  sessionStorage.setItem('activeTab', tab);
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
+
+// ── 스와이프로 탭 전환 ──────────────────────────────────────────────
+let swipeStartX = 0, swipeStartY = 0;
+const mainEl = document.getElementById('main');
+
+mainEl.addEventListener('touchstart', e => {
+  swipeStartX = e.touches[0].clientX;
+  swipeStartY = e.touches[0].clientY;
+}, { passive: true });
+
+mainEl.addEventListener('touchend', e => {
+  const currentTab = getActiveTab();
+  // 차트 탭은 pan/zoom과 충돌하므로 스와이프 탭 전환 제외
+  if (currentTab === 'graph') return;
+  // 표 내부 가로 스크롤 영역은 제외
+  if (currentTab === 'table' && e.target.closest('.table-wrap')) return;
+
+  const dx = e.changedTouches[0].clientX - swipeStartX;
+  const dy = e.changedTouches[0].clientY - swipeStartY;
+  // 수평 이동이 70px 미만이거나 수직 이동이 더 크면 무시
+  if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+
+  const idx = TAB_ORDER.indexOf(currentTab);
+  if (dx < 0 && idx < TAB_ORDER.length - 1) {
+    // 왼쪽 스와이프 → 다음 탭 (오른쪽에서 들어옴)
+    switchTab(TAB_ORDER[idx + 1], 'swipe-right');
+  } else if (dx > 0 && idx > 0) {
+    // 오른쪽 스와이프 → 이전 탭 (왼쪽에서 들어옴)
+    switchTab(TAB_ORDER[idx - 1], 'swipe-left');
+  }
+}, { passive: true });
 
 // ── HOME ──────────────────────────────────────────────────────────────
 function renderHome() {
@@ -530,7 +581,7 @@ function formatNum(n) {
 function renderIndicatorSelect() {
   const data = loadData();
   const sel = document.getElementById('indicator-select');
-  const current = sel.value || sessionStorage.getItem('selectedIndicator') || '';
+  const current = sel.value;
 
   const allSet = new Set();
   Object.values(data).forEach(e => Object.keys(e).forEach(k => allSet.add(k)));
@@ -551,10 +602,7 @@ function renderIndicatorSelect() {
 }
 
 document.getElementById('indicator-select').addEventListener('change', e => {
-  if (e.target.value) {
-    sessionStorage.setItem('selectedIndicator', e.target.value);
-    renderChart(e.target.value);
-  }
+  if (e.target.value) renderChart(e.target.value);
   else document.getElementById('chart-area').innerHTML = '<div class="no-chart">지표를 선택하면 그래프가 표시됩니다.</div>';
 });
 
@@ -854,12 +902,6 @@ document.getElementById('btn-save-entry').addEventListener('click', () => {
 // ── INIT ──────────────────────────────────────────────────────────────
 initData();
 renderHome();
-
-// 폴드폰 화면 전환 등으로 재로드 시 이전 탭·지표 복원
-(function restoreSession() {
-  const tab = sessionStorage.getItem('activeTab');
-  if (tab && tab !== 'home') switchTab(tab);
-})();
 
 // 서비스워커 등록 (오프라인 지원)
 if ('serviceWorker' in navigator) {
