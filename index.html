@@ -10,6 +10,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="투자 트래커">
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
@@ -236,6 +238,41 @@
     }
     #btn-save-entry:active { opacity: .85; }
 
+    /* ── SYNC ── */
+    #btn-sync-open {
+      background: transparent; border: none; color: #fff;
+      font-size: 20px; cursor: pointer; padding: 4px 8px;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .sync-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: #94a3b8; display: inline-block; flex-shrink: 0;
+    }
+    .sync-dot.connected { background: #22c55e; }
+    .sync-dot.syncing { background: #f59e0b; animation: syncPulse 1s infinite; }
+    .sync-dot.offline { background: #ef4444; }
+    @keyframes syncPulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    #modal-sync .sync-info {
+      font-size: 13px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.5;
+    }
+    #sync-status-row {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; color: var(--text-muted); margin: 8px 0 14px;
+    }
+    #btn-sync-connect {
+      width: 100%; padding: 13px;
+      background: var(--primary); color: #fff;
+      border: none; border-radius: 10px;
+      font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 4px;
+    }
+    #btn-sync-disconnect {
+      width: 100%; padding: 10px; margin-top: 8px;
+      background: transparent; color: #ef4444;
+      border: 1px solid #ef4444; border-radius: 10px;
+      font-size: 14px; cursor: pointer;
+    }
+
     /* Toast */
     #toast {
       position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
@@ -252,6 +289,7 @@
 <!-- HEADER -->
 <header id="header">
   <h1>📊 투자 지표 트래커</h1>
+  <button id="btn-sync-open" title="동기화 설정">☁️<span class="sync-dot" id="sync-dot"></span></button>
 </header>
 
 <!-- MAIN -->
@@ -304,6 +342,27 @@
   <button class="tab-btn" data-tab="table"><span class="icon">📋</span>표</button>
   <button class="tab-btn" data-tab="graph"><span class="icon">📈</span>그래프</button>
 </nav>
+
+<!-- SYNC MODAL -->
+<div class="modal-backdrop" id="modal-sync">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">☁️ 동기화 설정</div>
+      <button class="modal-close" id="close-sync">✕</button>
+    </div>
+    <p class="sync-info">같은 동기화 키를 사용하는 기기끼리 데이터가 자동으로 실시간 동기화됩니다.<br>PC와 핸드폰에 동일한 키를 입력하세요.</p>
+    <div class="form-row">
+      <label>동기화 키</label>
+      <input type="text" id="sync-key-input" placeholder="예) kim2024 (영문/숫자)">
+    </div>
+    <div id="sync-status-row">
+      상태: <span id="sync-status-text">미연결</span>
+      <span class="sync-dot" id="sync-dot-modal"></span>
+    </div>
+    <button id="btn-sync-connect">연결</button>
+    <button id="btn-sync-disconnect">연결 해제</button>
+  </div>
+</div>
 
 <!-- ENTRY MODAL -->
 <div class="modal-backdrop" id="modal-add">
@@ -899,9 +958,121 @@ document.getElementById('btn-save-entry').addEventListener('click', () => {
   showToast(`✅ ${formatDate(date)} 저장 완료 (${Object.keys(entry).length}개 항목)`);
 });
 
+// ── FIREBASE SYNC ─────────────────────────────────────────────────────
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDnQ1txyDi0DJJPdW-kWU5QTf_5Ah6ldtU",
+  authDomain: "invest-tracker-f7e3f.firebaseapp.com",
+  projectId: "invest-tracker-f7e3f",
+  storageBucket: "invest-tracker-f7e3f.firebasestorage.app",
+  messagingSenderId: "978474851175",
+  appId: "1:978474851175:web:df0f7306a9ab7f77382dc2"
+};
+const SYNC_KEY_STORAGE = 'invest_sync_key';
+let db = null;
+let syncUnsubscribe = null;
+let lastUploadTime = 0;
+
+function initFirebase() {
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    const savedKey = localStorage.getItem(SYNC_KEY_STORAGE);
+    if (savedKey) {
+      document.getElementById('sync-key-input').value = savedKey;
+      startSync(savedKey);
+    }
+  } catch(e) { console.error('Firebase 초기화 실패:', e); }
+}
+
+function startSync(key) {
+  if (!db || !key.trim()) return;
+  if (syncUnsubscribe) syncUnsubscribe();
+  localStorage.setItem(SYNC_KEY_STORAGE, key.trim());
+  setSyncStatus('syncing');
+
+  syncUnsubscribe = db.collection('sync').doc(key.trim()).onSnapshot(snap => {
+    if (!snap.exists) {
+      uploadToFirebase(key.trim());
+      return;
+    }
+    // 내가 방금 올린 데이터면 무시 (echo 방지)
+    if (Date.now() - lastUploadTime < 3000) {
+      setSyncStatus('connected');
+      return;
+    }
+    try {
+      const parsed = JSON.parse(snap.data().payload);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+      renderHome();
+      const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
+      if (activeTab === 'table') renderTable();
+      if (activeTab === 'graph') renderIndicatorSelect();
+      setSyncStatus('connected');
+      showToast('☁️ 동기화 완료');
+    } catch(e) { setSyncStatus('offline'); }
+  }, () => setSyncStatus('offline'));
+}
+
+function uploadToFirebase(key) {
+  if (!db || !key) return;
+  lastUploadTime = Date.now();
+  db.collection('sync').doc(key).set({
+    payload: JSON.stringify(loadData()),
+    updatedAt: Date.now()
+  }).then(() => setSyncStatus('connected'))
+    .catch(() => setSyncStatus('offline'));
+}
+
+function stopSync() {
+  if (syncUnsubscribe) { syncUnsubscribe(); syncUnsubscribe = null; }
+  localStorage.removeItem(SYNC_KEY_STORAGE);
+  setSyncStatus('disconnected');
+}
+
+function setSyncStatus(status) {
+  const dots = [document.getElementById('sync-dot'), document.getElementById('sync-dot-modal')];
+  const txt = document.getElementById('sync-status-text');
+  const labels = { connected:'동기화됨', syncing:'연결 중...', offline:'오프라인', disconnected:'미연결' };
+  dots.forEach(d => { if(d) { d.className='sync-dot'; if(status!=='disconnected') d.classList.add(status); }});
+  if (txt) txt.textContent = labels[status] || '미연결';
+}
+
+// saveData에 Firebase 업로드 연동
+const _origSaveData = saveData;
+saveData = function(data) {
+  _origSaveData(data);
+  const key = localStorage.getItem(SYNC_KEY_STORAGE);
+  if (db && key) uploadToFirebase(key);
+};
+
+// 동기화 모달 UI
+document.getElementById('btn-sync-open').addEventListener('click', () => {
+  document.getElementById('modal-sync').classList.add('open');
+});
+document.getElementById('close-sync').addEventListener('click', () => {
+  document.getElementById('modal-sync').classList.remove('open');
+});
+document.getElementById('modal-sync').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-sync'))
+    document.getElementById('modal-sync').classList.remove('open');
+});
+document.getElementById('btn-sync-connect').addEventListener('click', () => {
+  const key = document.getElementById('sync-key-input').value.trim();
+  if (!key) { showToast('동기화 키를 입력하세요'); return; }
+  startSync(key);
+  document.getElementById('modal-sync').classList.remove('open');
+  showToast('☁️ 동기화 연결 중...');
+});
+document.getElementById('btn-sync-disconnect').addEventListener('click', () => {
+  stopSync();
+  document.getElementById('sync-key-input').value = '';
+  showToast('동기화 연결 해제됨');
+});
+
 // ── INIT ──────────────────────────────────────────────────────────────
 initData();
 renderHome();
+initFirebase();
 
 // 서비스워커 등록 (오프라인 지원)
 if ('serviceWorker' in navigator) {
