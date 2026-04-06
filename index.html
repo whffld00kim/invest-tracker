@@ -260,12 +260,15 @@
       display: flex; align-items: center; gap: 8px;
       font-size: 13px; color: var(--text-muted); margin: 8px 0 14px;
     }
-    #btn-sync-connect {
-      width: 100%; padding: 13px;
-      background: var(--primary); color: #fff;
-      border: none; border-radius: 10px;
-      font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 4px;
+    .sync-btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+    .btn-sync-up, .btn-sync-down {
+      padding: 12px 8px; border: none; border-radius: 10px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
     }
+    .btn-sync-up { background: var(--primary); color: #fff; }
+    .btn-sync-down { background: #0f172a; color: #fff; }
+    .btn-sync-up span, .btn-sync-down span { font-size: 11px; font-weight: 400; opacity: .8; }
     #btn-sync-disconnect {
       width: 100%; padding: 10px; margin-top: 8px;
       background: transparent; color: #ef4444;
@@ -350,7 +353,7 @@
       <div class="modal-title">☁️ 동기화 설정</div>
       <button class="modal-close" id="close-sync">✕</button>
     </div>
-    <p class="sync-info">같은 동기화 키를 사용하는 기기끼리 데이터가 자동으로 실시간 동기화됩니다.<br>PC와 핸드폰에 동일한 키를 입력하세요.</p>
+    <p class="sync-info">같은 동기화 키를 사용하는 기기끼리 데이터가 동기화됩니다.<br>처음 연결 시 이 기기의 데이터를 올릴지, 클라우드 데이터를 받을지 선택하세요.</p>
     <div class="form-row">
       <label>동기화 키</label>
       <input type="text" id="sync-key-input" placeholder="예) kim2024 (영문/숫자)">
@@ -359,7 +362,10 @@
       상태: <span id="sync-status-text">미연결</span>
       <span class="sync-dot" id="sync-dot-modal"></span>
     </div>
-    <button id="btn-sync-connect">연결</button>
+    <div class="sync-btn-row">
+      <button class="btn-sync-up" id="btn-sync-upload">⬆️ 이 기기 → 클라우드<span>이 기기 데이터를 올림</span></button>
+      <button class="btn-sync-down" id="btn-sync-download">⬇️ 클라우드 → 이 기기<span>클라우드 데이터를 받음</span></button>
+    </div>
     <button id="btn-sync-disconnect">연결 해제</button>
   </div>
 </div>
@@ -991,12 +997,12 @@ function startSync(key) {
   setSyncStatus('syncing');
 
   syncUnsubscribe = db.collection('sync').doc(key.trim()).onSnapshot(snap => {
-    if (!snap.exists) {
-      uploadToFirebase(key.trim());
-      return;
-    }
     // 내가 방금 올린 데이터면 무시 (echo 방지)
     if (Date.now() - lastUploadTime < 3000) {
+      setSyncStatus('connected');
+      return;
+    }
+    if (!snap.exists) {
       setSyncStatus('connected');
       return;
     }
@@ -1056,12 +1062,23 @@ document.getElementById('modal-sync').addEventListener('click', e => {
   if (e.target === document.getElementById('modal-sync'))
     document.getElementById('modal-sync').classList.remove('open');
 });
-document.getElementById('btn-sync-connect').addEventListener('click', () => {
+// ⬆️ 이 기기 → 클라우드 (내 데이터를 올리고 이후 실시간 동기화)
+document.getElementById('btn-sync-upload').addEventListener('click', () => {
+  const key = document.getElementById('sync-key-input').value.trim();
+  if (!key) { showToast('동기화 키를 입력하세요'); return; }
+  uploadToFirebase(key);
+  startSync(key);
+  document.getElementById('modal-sync').classList.remove('open');
+  showToast('⬆️ 이 기기 데이터를 클라우드에 올렸어요');
+});
+
+// ⬇️ 클라우드 → 이 기기 (클라우드 데이터를 받고 이후 실시간 동기화)
+document.getElementById('btn-sync-download').addEventListener('click', () => {
   const key = document.getElementById('sync-key-input').value.trim();
   if (!key) { showToast('동기화 키를 입력하세요'); return; }
   startSync(key);
   document.getElementById('modal-sync').classList.remove('open');
-  showToast('☁️ 동기화 연결 중...');
+  showToast('⬇️ 클라우드 데이터를 받아오는 중...');
 });
 document.getElementById('btn-sync-disconnect').addEventListener('click', () => {
   stopSync();
