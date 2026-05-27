@@ -15,6 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
   <script src="./initial_data.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -72,7 +73,7 @@
       height: var(--tab-h);
       background: var(--card);
       border-top: 1px solid var(--border);
-      display: grid; grid-template-columns: repeat(3, 1fr);
+      display: grid; grid-template-columns: repeat(4, 1fr);
     }
     .tab-btn {
       border: none; background: transparent;
@@ -276,6 +277,73 @@
       font-size: 14px; cursor: pointer;
     }
 
+    /* ── 설정 탭 ── */
+    .settings-info { font-size: 13px; color: var(--text-muted); margin: 4px 0 14px; line-height: 1.5; }
+    .btn-settings-add {
+      width: 100%; padding: 12px; margin-bottom: 14px;
+      background: var(--primary); color: #fff;
+      border: none; border-radius: 10px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .btn-settings-reset {
+      width: 100%; padding: 10px; margin-top: 12px;
+      background: transparent; color: var(--text-muted);
+      border: 1px dashed var(--border); border-radius: 10px;
+      font-size: 13px; cursor: pointer;
+    }
+    .btn-settings-reset:active { background: var(--bg); }
+    .settings-group { margin-bottom: 18px; }
+    .settings-group-title {
+      font-size: 12px; font-weight: 700; color: var(--primary);
+      text-transform: uppercase; letter-spacing: .5px;
+      padding: 8px 0 6px; border-bottom: 2px solid var(--primary-light);
+      margin-bottom: 6px;
+    }
+    .settings-row {
+      display: flex; align-items: center; gap: 6px;
+      padding: 9px 10px; margin-bottom: 5px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    }
+    .settings-row.sortable-ghost { opacity: .4; background: var(--primary-light); border-color: var(--primary); }
+    .settings-row.sortable-chosen { background: #fff; }
+    .settings-row.sortable-drag { box-shadow: 0 6px 18px rgba(0,0,0,.18); cursor: grabbing; }
+    .settings-row .drag-handle {
+      cursor: grab; padding: 4px 6px;
+      color: var(--text-muted); font-size: 18px;
+      user-select: none; -webkit-user-select: none;
+      touch-action: none;
+      flex-shrink: 0;
+    }
+    .settings-row .drag-handle:active { cursor: grabbing; color: var(--primary); }
+    .settings-row .ind-name { flex: 1; font-size: 14px; font-weight: 500; color: var(--text); }
+    .settings-row .ind-locked-tag {
+      font-size: 10px; color: #0284c7; background: #e0f2fe;
+      padding: 2px 6px; border-radius: 4px; margin-left: 4px;
+    }
+    .settings-row .btn-move, .settings-row .btn-del {
+      width: 32px; height: 32px; border: 1px solid var(--border);
+      background: var(--card); border-radius: 6px;
+      font-size: 14px; cursor: pointer; color: var(--text);
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; flex-shrink: 0;
+    }
+    .settings-row .btn-move:active, .settings-row .btn-del:active { background: var(--bg); }
+    .settings-row .btn-move:disabled { opacity: .3; cursor: not-allowed; }
+    .settings-row .btn-del { color: #ef4444; border-color: #fca5a5; }
+    .settings-row .btn-del:disabled { color: #cbd5e1; border-color: var(--border); cursor: not-allowed; }
+
+    .btn-settings-add-confirm {
+      width: 100%; padding: 13px; margin-top: 4px;
+      background: var(--primary); color: #fff;
+      border: none; border-radius: 10px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+    }
+    #new-ind-group, #new-ind-name, #new-ind-placeholder {
+      width: 100%; padding: 10px 12px;
+      border: 1px solid var(--border); border-radius: 8px;
+      font-size: 15px; background: var(--bg); color: var(--text);
+    }
+
     /* Toast */
     #toast {
       position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
@@ -337,6 +405,17 @@
     </div>
   </div>
 
+  <!-- SETTINGS TAB -->
+  <div id="tab-settings" class="tab-content">
+    <div class="card">
+      <div class="card-title">지표 관리</div>
+      <p class="settings-info">입력 양식, 표, 그래프에서 사용하는 지표를 관리합니다.<br>↑↓ 버튼으로 순서를 바꿀 수 있습니다.</p>
+      <button class="btn-settings-add" id="btn-settings-add">+ 새 지표 추가</button>
+      <div id="settings-indicator-list"></div>
+      <button class="btn-settings-reset" id="btn-settings-reset">기본값으로 초기화</button>
+    </div>
+  </div>
+
 </div>
 
 <!-- BOTTOM TAB NAV -->
@@ -344,6 +423,7 @@
   <button class="tab-btn active" data-tab="home"><span class="icon">🏠</span>홈</button>
   <button class="tab-btn" data-tab="table"><span class="icon">📋</span>표</button>
   <button class="tab-btn" data-tab="graph"><span class="icon">📈</span>그래프</button>
+  <button class="tab-btn" data-tab="settings"><span class="icon">⚙️</span>설정</button>
 </nav>
 
 <!-- SYNC MODAL -->
@@ -383,58 +463,33 @@
       <input type="date" id="entry-date">
     </div>
 
-    <!-- 금리 -->
-    <div class="group-title">📉 금리</div>
-    <div class="indicator-grid">
-      <div class="ind-field"><label>국채 3년</label><input type="number" step="any" id="f-kr3" placeholder="예) 3.502"></div>
-      <div class="ind-field"><label>국채10년</label><input type="number" step="any" id="f-kr10" placeholder="예) 3.820"></div>
-      <div class="ind-field"><label>미국채 2년</label><input type="number" step="any" id="f-us2" placeholder="예) 3.845"></div>
-      <div class="ind-field"><label>미국채 10년</label><input type="number" step="any" id="f-us10" placeholder="예) 4.338"></div>
-    </div>
+    <!-- 동적으로 렌더링되는 지표 필드 -->
+    <div id="entry-fields-container"></div>
 
-    <!-- 환율 -->
-    <div class="group-title">💱 환율</div>
-    <div class="indicator-grid">
-      <div class="ind-field"><label>원달러환율</label><input type="number" step="any" id="f-usd" placeholder="예) 1497.9"></div>
-      <div class="ind-field"><label>달러인덱스</label><input type="number" step="any" id="f-dxy" placeholder="예) 99.29"></div>
-    </div>
-
-    <!-- 주가지수 -->
-    <div class="group-title">📊 주가지수</div>
-    <div class="indicator-grid">
-      <div class="ind-field"><label>코스피지수</label><input type="number" step="any" id="f-kospi" placeholder="예) 5638.20"></div>
-      <div class="ind-field"><label>코스닥지수</label><input type="number" step="any" id="f-kosdaq" placeholder="예) 1134.16"></div>
-      <div class="ind-field"><label>나스닥</label><input type="number" step="any" id="f-nasdaq" placeholder="예) 21995.78"></div>
-      <div class="ind-field"><label>다우존스</label><input type="number" step="any" id="f-dow" placeholder="예) 45803.82"></div>
-      <div class="ind-field"><label>S&amp;P500</label><input type="number" step="any" id="f-sp500" placeholder="예) 6574.96"></div>
-    </div>
-
-    <!-- 원자재 -->
-    <div class="group-title">🪙 원자재</div>
-    <div class="indicator-grid">
-      <div class="ind-field"><label>국제 금 (USD/oz)</label><input type="number" step="any" id="f-gold-intl" placeholder="예) 4331.5"></div>
-      <div class="ind-field"><label>금 환산 (원/g)</label><input type="number" step="any" id="f-gold-krw" class="auto-calc" readonly placeholder="자동계산"><span class="auto-label">= 국제금 × 환율 ÷ 28.3495</span></div>
-      <div class="ind-field"><label>금 할인률 (%)</label><input type="number" step="any" id="f-gold-disc" class="auto-calc" readonly placeholder="자동계산"><span class="auto-label">= (금환산 − 국내금) ÷ 금환산 × 100</span></div>
-      <div class="ind-field"><label>국내 금 (원/g)</label><input type="number" step="any" id="f-gold-kr" placeholder="예) 209,980"></div>
-      <div class="ind-field"><label>구리 (USD/MT)</label><input type="number" step="any" id="f-copper" placeholder="예) 12081.74"></div>
-      <div class="ind-field"><label>원유 (USD/배럴)</label><input type="number" step="any" id="f-oil" placeholder="예) 88.78"></div>
-    </div>
-
-    <!-- 가상자산/주식 -->
-    <div class="group-title">₿ 가상자산 / 주식</div>
-    <div class="indicator-grid">
-      <div class="ind-field"><label>비트코인 (원)</label><input type="number" step="any" id="f-btc" placeholder="예) 105404000"></div>
-      <div class="ind-field"><label>삼성전자 (원)</label><input type="number" step="any" id="f-samsung" placeholder="예) 189500"></div>
-      <div class="ind-field"><label>삼성전자우 (원)</label><input type="number" step="any" id="f-samsung-p" placeholder="예) 134700"></div>
-      <div class="ind-field"><label>삼성우비율</label><input type="number" step="any" id="f-samsung-r" class="auto-calc" readonly placeholder="자동계산"><span class="auto-label">= 삼성전자우 ÷ 삼성전자</span></div>
-    </div>
-
-    <!-- 직접 추가 -->
-    <div class="group-title">➕ 직접 추가</div>
+    <!-- (구버전 데이터 호환용) 설정에 없는 지표가 있는 날짜를 편집할 때 표시 -->
     <div class="custom-fields" id="custom-fields"></div>
-    <button id="btn-add-custom">+ 항목 추가</button>
 
     <button id="btn-save-entry">💾 저장</button>
+  </div>
+</div>
+
+<!-- ADD INDICATOR MODAL -->
+<div class="modal-backdrop" id="modal-add-indicator">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">➕ 새 지표 추가</div>
+      <button class="modal-close" id="close-add-indicator">✕</button>
+    </div>
+    <div class="form-row">
+      <label>지표명</label>
+      <input type="text" id="new-ind-name" placeholder="예) 일본 닛케이">
+    </div>
+    <div class="form-row">
+      <label>입력 예시 (선택)</label>
+      <input type="text" id="new-ind-placeholder" placeholder="예) 38900.5">
+    </div>
+    <p class="settings-info" style="margin: 4px 0 12px;">추가된 지표는 목록 맨 아래에 추가됩니다. 순서는 ↑↓ 버튼으로 조정하세요.</p>
+    <button class="btn-settings-add-confirm" id="btn-add-indicator-confirm">추가</button>
   </div>
 </div>
 
@@ -445,33 +500,66 @@
 const STORAGE_KEY = 'invest_tracker_v2';
 const INITIAL_DATA_VER = 'v3'; // 기본 데이터 버전 — 올리면 localStorage 강제 재로드
 
-// 고정 항목 매핑 (id → 지표명) — 엑셀 경제지표 시트 기준
-const FIXED_FIELDS = [
-  ['f-kr3',       '국채 3년'],
-  ['f-kr10',      '국채10년'],
-  ['f-us2',       '미국채 2년'],
-  ['f-us10',      '미국채 10년'],
-  ['f-usd',       '원달러환율'],
-  ['f-dxy',       '달러인덱스'],
-  ['f-kospi',     '코스피지수'],
-  ['f-kosdaq',    '코스닥지수'],
-  ['f-nasdaq',    '나스닥'],
-  ['f-dow',       '다우존스'],
-  ['f-sp500',     'S&P500'],
-  ['f-gold-intl', '국제 금'],
-  ['f-gold-krw',  '금 환산'],
-  ['f-gold-disc', '금 할인률'],
-  ['f-gold-kr',   '국내 금'],
-  ['f-copper',    '구리'],
-  ['f-oil',       '원유'],
-  ['f-btc',       '비트코인'],
-  ['f-samsung',   '삼성전자'],
-  ['f-samsung-p', '삼성전자우'],
-  ['f-samsung-r', '삼성우비율'],
+// 그룹 이모지
+const GROUP_EMOJI = {
+  '금리': '📉',
+  '환율': '💱',
+  '주가지수': '📊',
+  '원자재': '🪙',
+  '가상자산/주식': '₿',
+  '기타': '📌',
+};
+
+// 기본 지표 정의 (사용자 설정이 없을 때 사용)
+const DEFAULT_INDICATORS = [
+  { id: 'f-kr3',       name: '국채 3년',    group: '금리',          placeholder: '예) 3.502' },
+  { id: 'f-kr10',      name: '국채10년',    group: '금리',          placeholder: '예) 3.820' },
+  { id: 'f-us2',       name: '미국채 2년',  group: '금리',          placeholder: '예) 3.845' },
+  { id: 'f-us10',      name: '미국채 10년', group: '금리',          placeholder: '예) 4.338' },
+  { id: 'f-usd',       name: '원달러환율',  group: '환율',          placeholder: '예) 1497.9' },
+  { id: 'f-dxy',       name: '달러인덱스',  group: '환율',          placeholder: '예) 99.29' },
+  { id: 'f-kospi',     name: '코스피지수',  group: '주가지수',      placeholder: '예) 5638.20' },
+  { id: 'f-kosdaq',    name: '코스닥지수',  group: '주가지수',      placeholder: '예) 1134.16' },
+  { id: 'f-nasdaq',    name: '나스닥',      group: '주가지수',      placeholder: '예) 21995.78' },
+  { id: 'f-dow',       name: '다우존스',    group: '주가지수',      placeholder: '예) 45803.82' },
+  { id: 'f-sp500',     name: 'S&P500',     group: '주가지수',      placeholder: '예) 6574.96' },
+  { id: 'f-gold-intl', name: '국제 금',    group: '원자재',        placeholder: '예) 4331.5',  label: '국제 금 (USD/oz)' },
+  { id: 'f-gold-krw',  name: '금 환산',    group: '원자재',        placeholder: '자동계산',     label: '금 환산 (원/g)',
+    autoCalc: 'goldKrw', autoFormula: '= 국제금 × 환율 ÷ 28.3495' },
+  { id: 'f-gold-disc', name: '금 할인률',  group: '원자재',        placeholder: '자동계산',     label: '금 할인률 (%)',
+    autoCalc: 'goldDisc', autoFormula: '= (금환산 − 국내금) ÷ 금환산 × 100' },
+  { id: 'f-gold-kr',   name: '국내 금',    group: '원자재',        placeholder: '예) 209,980', label: '국내 금 (원/g)' },
+  { id: 'f-copper',    name: '구리',       group: '원자재',        placeholder: '예) 12081.74', label: '구리 (USD/MT)' },
+  { id: 'f-oil',       name: '원유',       group: '원자재',        placeholder: '예) 88.78',   label: '원유 (USD/배럴)' },
+  { id: 'f-btc',       name: '비트코인',   group: '가상자산/주식', placeholder: '예) 105404000', label: '비트코인 (원)' },
+  { id: 'f-samsung',   name: '삼성전자',   group: '가상자산/주식', placeholder: '예) 189500',    label: '삼성전자 (원)' },
+  { id: 'f-samsung-p', name: '삼성전자우', group: '가상자산/주식', placeholder: '예) 134700',    label: '삼성전자우 (원)' },
+  { id: 'f-samsung-r', name: '삼성우비율', group: '가상자산/주식', placeholder: '자동계산',
+    autoCalc: 'samsungRatio', autoFormula: '= 삼성전자우 ÷ 삼성전자' },
 ];
 
-// 지표 표시 순서 (그래프/표에서 사용)
-const FIELD_ORDER = FIXED_FIELDS.map(f => f[1]);
+const INDICATORS_STORAGE = 'invest_indicators_v1';
+
+function getIndicators() {
+  try {
+    const raw = localStorage.getItem(INDICATORS_STORAGE);
+    if (!raw) return JSON.parse(JSON.stringify(DEFAULT_INDICATORS));
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return JSON.parse(JSON.stringify(DEFAULT_INDICATORS));
+    return parsed;
+  } catch {
+    return JSON.parse(JSON.stringify(DEFAULT_INDICATORS));
+  }
+}
+
+function saveIndicators(list) {
+  localStorage.setItem(INDICATORS_STORAGE, JSON.stringify(list));
+}
+
+// 표/차트에서 사용할 지표 표시 순서 (이름 배열)
+function getFieldOrder() {
+  return getIndicators().map(i => i.name);
+}
 
 // ── 초기 데이터 로드 ─────────────────────────────────────────────────
 function initData() {
@@ -510,7 +598,7 @@ function showToast(msg, dur = 2500) {
 }
 
 // ── TABS ──────────────────────────────────────────────────────────────
-const TAB_ORDER = ['home', 'table', 'graph'];
+const TAB_ORDER = ['home', 'table', 'graph', 'settings'];
 
 function getActiveTab() {
   return document.querySelector('.tab-btn.active')?.dataset.tab || 'home';
@@ -527,6 +615,7 @@ function switchTab(tab, swipeDir) {
   if (swipeDir) content.classList.add(swipeDir);
   if (tab === 'table') renderTable();
   if (tab === 'graph') renderIndicatorSelect();
+  if (tab === 'settings') renderSettingsTab();
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -613,11 +702,12 @@ function renderTable() {
     return;
   }
 
-  // 순서: FIXED_FIELDS 순 → 나머지 커스텀
+  // 순서: 설정 탭 지표 순 → 나머지 커스텀
   const allSet = new Set();
   dates.forEach(d => Object.keys(data[d]).forEach(n => allSet.add(n)));
-  const ordered = FIELD_ORDER.filter(n => allSet.has(n));
-  const extras = [...allSet].filter(n => !FIELD_ORDER.includes(n));
+  const fieldOrder = getFieldOrder();
+  const ordered = fieldOrder.filter(n => allSet.has(n));
+  const extras = [...allSet].filter(n => !fieldOrder.includes(n));
   const allIndicators = [...ordered, ...extras];
 
   let html = '<table><thead><tr><th>지표</th>';
@@ -651,9 +741,10 @@ function renderIndicatorSelect() {
   const allSet = new Set();
   Object.values(data).forEach(e => Object.keys(e).forEach(k => allSet.add(k)));
 
-  // 순서: FIXED_FIELDS 순 → 나머지
-  const ordered = FIELD_ORDER.filter(n => allSet.has(n));
-  const extras = [...allSet].filter(n => !FIELD_ORDER.includes(n));
+  // 순서: 설정 탭 지표 순 → 나머지
+  const fieldOrder = getFieldOrder();
+  const ordered = fieldOrder.filter(n => allSet.has(n));
+  const extras = [...allSet].filter(n => !fieldOrder.includes(n));
   const allNames = [...ordered, ...extras];
 
   sel.innerHTML = '<option value="">-- 지표를 선택하세요 --</option>';
@@ -806,25 +897,64 @@ function adjustY(chart) {
 // ── ADD MODAL ─────────────────────────────────────────────────────────
 let customCount = 0;
 
+// 지표 정의에 따라 입력 모달 필드를 동적 생성 (전체를 하나의 그리드로)
+function renderEntryFields() {
+  const indicators = getIndicators();
+  const container = document.getElementById('entry-fields-container');
+  if (!container) return;
+
+  let html = '<div class="indicator-grid">';
+  indicators.forEach(ind => {
+    const label = ind.label || ind.name;
+    const placeholder = ind.placeholder || '';
+    if (ind.autoCalc) {
+      html += `<div class="ind-field"><label>${escapeHtml(label)}</label>` +
+              `<input type="number" step="any" id="${ind.id}" class="auto-calc" readonly placeholder="${escapeHtml(placeholder)}">` +
+              (ind.autoFormula ? `<span class="auto-label">${escapeHtml(ind.autoFormula)}</span>` : '') +
+              `</div>`;
+    } else {
+      html += `<div class="ind-field"><label>${escapeHtml(label)}</label>` +
+              `<input type="number" step="any" id="${ind.id}" placeholder="${escapeHtml(placeholder)}">` +
+              `</div>`;
+    }
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 function openAddModal(editDate = null) {
+  // 매번 최신 지표 정의로 폼 재생성
+  renderEntryFields();
+
   document.getElementById('entry-date').value = editDate || new Date().toISOString().split('T')[0];
-  FIXED_FIELDS.forEach(([id]) => { document.getElementById(id).value = ''; });
+  const indicators = getIndicators();
+  indicators.forEach(ind => {
+    const el = document.getElementById(ind.id);
+    if (el) el.value = '';
+  });
   customCount = 0;
   document.getElementById('custom-fields').innerHTML = '';
 
   if (editDate) {
     const data = loadData();
     const entry = data[editDate] || {};
-    const fixedNames = FIXED_FIELDS.map(f => f[1]);
-    FIXED_FIELDS.forEach(([id, name]) => {
-      if (entry[name] !== undefined) document.getElementById(id).value = entry[name];
+    const fixedNames = indicators.map(i => i.name);
+    indicators.forEach(ind => {
+      if (entry[ind.name] !== undefined) {
+        const el = document.getElementById(ind.id);
+        if (el) el.value = entry[ind.name];
+      }
     });
     Object.entries(entry).forEach(([name, val]) => {
       if (!fixedNames.includes(name)) addCustomRow(name, val);
     });
   }
 
-  // 자동계산 필드 갱신
+  // 자동계산 필드 갱신 (해당 ID들이 있을 때만)
   calcGoldFields();
   calcSamsungRatio();
 
@@ -845,46 +975,56 @@ function addCustomRow(name = '', val = '') {
 }
 
 // ── 자동계산 ────────────────────────────────────────────────────────
+function getVal(id) {
+  const el = document.getElementById(id);
+  return el ? parseFloat(el.value) : NaN;
+}
+function setVal(id, v) {
+  const el = document.getElementById(id);
+  if (el) el.value = v;
+}
+
 function calcGoldFields() {
-  const goldIntl = parseFloat(document.getElementById('f-gold-intl').value);
-  const usd      = parseFloat(document.getElementById('f-usd').value);
-  const goldKr   = parseFloat(document.getElementById('f-gold-kr').value);
+  const goldIntl = getVal('f-gold-intl');
+  const usd      = getVal('f-usd');
+  const goldKr   = getVal('f-gold-kr');
 
   // 금 환산 (원/g) = 국제금(USD/oz) × 환율(원/USD) ÷ 28.3495(g/oz)
   let goldKrw = '';
   if (!isNaN(goldIntl) && !isNaN(usd)) {
     goldKrw = Math.round(goldIntl * usd / 28.3495);
-    document.getElementById('f-gold-krw').value = goldKrw;
+    setVal('f-gold-krw', goldKrw);
   } else {
-    document.getElementById('f-gold-krw').value = '';
+    setVal('f-gold-krw', '');
   }
 
   // 금 할인률 (%) = (금환산 − 국내금) ÷ 금환산 × 100
   if (!isNaN(goldKr) && goldKrw !== '' && goldKrw !== 0) {
     const disc = ((goldKrw - goldKr) / goldKrw) * 100;
-    document.getElementById('f-gold-disc').value = disc.toFixed(2);
+    setVal('f-gold-disc', disc.toFixed(2));
   } else {
-    document.getElementById('f-gold-disc').value = '';
+    setVal('f-gold-disc', '');
   }
 }
 
 function calcSamsungRatio() {
-  const sam  = parseFloat(document.getElementById('f-samsung').value);
-  const samp = parseFloat(document.getElementById('f-samsung-p').value);
+  const sam  = getVal('f-samsung');
+  const samp = getVal('f-samsung-p');
   if (!isNaN(sam) && !isNaN(samp) && sam !== 0) {
-    document.getElementById('f-samsung-r').value = (samp / sam).toFixed(4);
+    setVal('f-samsung-r', (samp / sam).toFixed(4));
   } else {
-    document.getElementById('f-samsung-r').value = '';
+    setVal('f-samsung-r', '');
   }
 }
 
-// 관련 입력 필드에 이벤트 연결
-['f-gold-intl', 'f-usd', 'f-gold-kr'].forEach(id =>
-  document.getElementById(id).addEventListener('input', calcGoldFields)
-);
-['f-samsung', 'f-samsung-p'].forEach(id =>
-  document.getElementById(id).addEventListener('input', calcSamsungRatio)
-);
+// 입력 모달 내부에서 입력이 일어날 때 자동계산 트리거 (이벤트 위임 — 동적 필드 대응)
+const goldTriggerIds = ['f-gold-intl', 'f-usd', 'f-gold-kr'];
+const samsungTriggerIds = ['f-samsung', 'f-samsung-p'];
+document.getElementById('entry-fields-container').addEventListener('input', e => {
+  const id = e.target.id;
+  if (goldTriggerIds.includes(id)) calcGoldFields();
+  if (samsungTriggerIds.includes(id)) calcSamsungRatio();
+});
 
 // ── 백업 (내보내기) ──────────────────────────────────────────────────
 document.getElementById('btn-backup').addEventListener('click', () => {
@@ -930,7 +1070,6 @@ document.getElementById('restore-file-input').addEventListener('change', e => {
 });
 
 document.getElementById('btn-add').addEventListener('click', () => openAddModal());
-document.getElementById('btn-add-custom').addEventListener('click', () => addCustomRow());
 document.getElementById('close-add').addEventListener('click', () => {
   document.getElementById('modal-add').classList.remove('open');
 });
@@ -944,9 +1083,11 @@ document.getElementById('btn-save-entry').addEventListener('click', () => {
   if (!date) { showToast('날짜를 선택하세요'); return; }
 
   const entry = {};
-  FIXED_FIELDS.forEach(([id, name]) => {
-    const v = document.getElementById(id).value;
-    if (v !== '') entry[name] = parseFloat(v);
+  getIndicators().forEach(ind => {
+    const el = document.getElementById(ind.id);
+    if (!el) return;
+    const v = el.value;
+    if (v !== '') entry[ind.name] = parseFloat(v);
   });
   document.querySelectorAll('.custom-row').forEach(row => {
     const name = row.querySelector('.custom-name').value.trim();
@@ -962,6 +1103,135 @@ document.getElementById('btn-save-entry').addEventListener('click', () => {
   document.getElementById('modal-add').classList.remove('open');
   renderHome();
   showToast(`✅ ${formatDate(date)} 저장 완료 (${Object.keys(entry).length}개 항목)`);
+});
+
+// ── 설정 탭 ────────────────────────────────────────────────────────
+let sortableInstance = null;
+
+function renderSettingsTab() {
+  const list = getIndicators();
+  const container = document.getElementById('settings-indicator-list');
+  if (!container) return;
+
+  let html = '';
+  list.forEach((ind, idx) => {
+    const isFirst = idx === 0;
+    const isLast  = idx === list.length - 1;
+    const locked  = !!ind.autoCalc;
+    html += `<div class="settings-row" data-id="${ind.id}">` +
+      `<span class="drag-handle" title="드래그해서 이동">⋮⋮</span>` +
+      `<span class="ind-name">${escapeHtml(ind.name)}` +
+      (locked ? `<span class="ind-locked-tag">자동계산</span>` : '') +
+      `</span>` +
+      `<button class="btn-move" data-act="up" data-id="${ind.id}" ${isFirst?'disabled':''} title="위로">↑</button>` +
+      `<button class="btn-move" data-act="down" data-id="${ind.id}" ${isLast?'disabled':''} title="아래로">↓</button>` +
+      `<button class="btn-del" data-act="del" data-id="${ind.id}" ${locked?'disabled':''} title="${locked?'자동계산 지표는 삭제 불가':'삭제'}">🗑</button>` +
+    `</div>`;
+  });
+
+  container.innerHTML = html;
+
+  // 드래그앤드롭 초기화 (모바일/PC 모두 지원)
+  if (sortableInstance) { sortableInstance.destroy(); sortableInstance = null; }
+  if (typeof Sortable !== 'undefined') {
+    sortableInstance = new Sortable(container, {
+      handle: '.drag-handle',
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      chosenClass: 'sortable-chosen',
+      dragClass: 'sortable-drag',
+      forceFallback: true,    // 모바일 일관성 위해 fallback 사용
+      fallbackTolerance: 5,
+      onEnd: evt => {
+        if (evt.oldIndex === evt.newIndex) return;
+        const cur = getIndicators();
+        const [moved] = cur.splice(evt.oldIndex, 1);
+        cur.splice(evt.newIndex, 0, moved);
+        saveIndicators(cur);
+        renderSettingsTab(); // ↑↓ 버튼의 disabled 상태 갱신 위해 재렌더
+      }
+    });
+  }
+}
+
+// 전체 목록에서 위/아래로 이동
+function moveIndicator(id, direction) {
+  const list = getIndicators();
+  const idx = list.findIndex(i => i.id === id);
+  if (idx < 0) return;
+  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= list.length) return;
+  [list[swapIdx], list[idx]] = [list[idx], list[swapIdx]];
+  saveIndicators(list);
+  renderSettingsTab();
+}
+
+function deleteIndicator(id) {
+  const list = getIndicators();
+  const ind = list.find(i => i.id === id);
+  if (!ind) return;
+  if (ind.autoCalc) { showToast('자동계산 지표는 삭제할 수 없습니다'); return; }
+  if (!confirm(`"${ind.name}" 지표를 삭제할까요?\n(기존 입력된 데이터는 표/차트에 남아 있습니다)`)) return;
+  const next = list.filter(i => i.id !== id);
+  saveIndicators(next);
+  renderSettingsTab();
+  showToast(`🗑 ${ind.name} 삭제됨`);
+}
+
+function addIndicator(name, placeholder) {
+  const list = getIndicators();
+  // 같은 이름 중복 체크
+  if (list.some(i => i.name === name)) { showToast('같은 이름의 지표가 이미 있습니다'); return false; }
+  // 고유 ID 생성
+  const id = 'f-custom-' + Date.now().toString(36);
+  const newInd = { id, name, placeholder: placeholder || '' };
+  // 목록의 맨 끝에 추가
+  list.push(newInd);
+  saveIndicators(list);
+  renderSettingsTab();
+  showToast(`✅ ${name} 추가됨`);
+  return true;
+}
+
+// 설정 탭 이벤트 위임 (↑↓🗑)
+document.getElementById('settings-indicator-list').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  const act = btn.dataset.act;
+  if (act === 'up')   moveIndicator(id, 'up');
+  if (act === 'down') moveIndicator(id, 'down');
+  if (act === 'del')  deleteIndicator(id);
+});
+
+// 기본값으로 초기화
+document.getElementById('btn-settings-reset').addEventListener('click', () => {
+  if (!confirm('지표 목록을 기본값으로 되돌릴까요?\n(추가하거나 삭제한 지표 설정이 사라집니다. 입력된 데이터는 영향 없음)')) return;
+  localStorage.removeItem(INDICATORS_STORAGE);
+  renderSettingsTab();
+  showToast('🔄 기본값으로 초기화됨');
+});
+
+// 새 지표 추가 모달
+document.getElementById('btn-settings-add').addEventListener('click', () => {
+  document.getElementById('new-ind-name').value = '';
+  document.getElementById('new-ind-placeholder').value = '';
+  document.getElementById('modal-add-indicator').classList.add('open');
+});
+document.getElementById('close-add-indicator').addEventListener('click', () => {
+  document.getElementById('modal-add-indicator').classList.remove('open');
+});
+document.getElementById('modal-add-indicator').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-add-indicator'))
+    document.getElementById('modal-add-indicator').classList.remove('open');
+});
+document.getElementById('btn-add-indicator-confirm').addEventListener('click', () => {
+  const name = document.getElementById('new-ind-name').value.trim();
+  const placeholder = document.getElementById('new-ind-placeholder').value.trim();
+  if (!name) { showToast('지표명을 입력하세요'); return; }
+  if (addIndicator(name, placeholder)) {
+    document.getElementById('modal-add-indicator').classList.remove('open');
+  }
 });
 
 // ── FIREBASE SYNC ─────────────────────────────────────────────────────
@@ -1088,6 +1358,7 @@ document.getElementById('btn-sync-disconnect').addEventListener('click', () => {
 
 // ── INIT ──────────────────────────────────────────────────────────────
 initData();
+renderEntryFields(); // 입력 모달의 동적 필드 미리 생성
 renderHome();
 initFirebase();
 
