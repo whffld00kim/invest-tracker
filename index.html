@@ -525,7 +525,7 @@ const DEFAULT_INDICATORS = [
   { id: 'f-sp500',     name: 'S&P500',     group: '주가지수',      placeholder: '예) 6574.96' },
   { id: 'f-gold-intl', name: '국제 금',    group: '원자재',        placeholder: '예) 4331.5',  label: '국제 금 (USD/oz)' },
   { id: 'f-gold-krw',  name: '금 환산',    group: '원자재',        placeholder: '자동계산',     label: '금 환산 (원/g)',
-    autoCalc: 'goldKrw', autoFormula: '= 국제금 × 환율 ÷ 28.3495' },
+    autoCalc: 'goldKrw', autoFormula: '= 국제금 × 환율 ÷ 31.1035' },
   { id: 'f-gold-disc', name: '금 할인률',  group: '원자재',        placeholder: '자동계산',     label: '금 할인률 (%)',
     autoCalc: 'goldDisc', autoFormula: '= (금환산 − 국내금) ÷ 금환산 × 100' },
   { id: 'f-gold-kr',   name: '국내 금',    group: '원자재',        placeholder: '예) 209,980', label: '국내 금 (원/g)' },
@@ -546,6 +546,12 @@ function getIndicators() {
     if (!raw) return JSON.parse(JSON.stringify(DEFAULT_INDICATORS));
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length === 0) return JSON.parse(JSON.stringify(DEFAULT_INDICATORS));
+    // 구버전 수식 라벨 마이그레이션 (일반온스 → 트로이온스)
+    parsed.forEach(ind => {
+      if (ind.autoFormula && ind.autoFormula.includes('28.3495')) {
+        ind.autoFormula = ind.autoFormula.replace('28.3495', '31.1035');
+      }
+    });
     return parsed;
   } catch {
     return JSON.parse(JSON.stringify(DEFAULT_INDICATORS));
@@ -989,10 +995,10 @@ function calcGoldFields() {
   const usd      = getVal('f-usd');
   const goldKr   = getVal('f-gold-kr');
 
-  // 금 환산 (원/g) = 국제금(USD/oz) × 환율(원/USD) ÷ 28.3495(g/oz)
+  // 금 환산 (원/g) = 국제금(USD/트로이온스) × 환율(원/USD) ÷ 31.1035(g/트로이온스)
   let goldKrw = '';
   if (!isNaN(goldIntl) && !isNaN(usd)) {
-    goldKrw = Math.round(goldIntl * usd / 28.3495);
+    goldKrw = Math.round(goldIntl * usd / 31.1035);
     setVal('f-gold-krw', goldKrw);
   } else {
     setVal('f-gold-krw', '');
