@@ -1262,6 +1262,8 @@ function initFirebase() {
     if (savedKey) {
       document.getElementById('sync-key-input').value = savedKey;
       startSync(savedKey);
+      // 금 환산 재계산이 있었으면 클라우드의 옛 데이터로 덮어써지지 않도록 즉시 업로드
+      if (goldMigrationChanged) uploadToFirebase(savedKey);
     }
   } catch(e) { console.error('Firebase 초기화 실패:', e); }
 }
@@ -1362,8 +1364,38 @@ document.getElementById('btn-sync-disconnect').addEventListener('click', () => {
   showToast('동기화 연결 해제됨');
 });
 
+// ── 금 환산 일괄 재계산 (일반온스 → 트로이온스, 기기당 1회) ─────────
+let goldMigrationChanged = false;
+function migrateGoldRecalc() {
+  const FLAG = 'gold_recalc_troy_v1';
+  if (localStorage.getItem(FLAG)) return;
+  const data = loadData();
+  let changed = 0;
+  Object.keys(data).forEach(d => {
+    const e = data[d];
+    const intl = parseFloat(e['국제 금']);
+    const usd  = parseFloat(e['원달러환율']);
+    if (!isNaN(intl) && !isNaN(usd) && intl > 0 && usd > 0) {
+      const krw = Math.round(intl * usd / 31.1035);
+      e['금 환산'] = krw;
+      const kr = parseFloat(e['국내 금']);
+      if (!isNaN(kr) && krw > 0) {
+        e['금 할인률'] = parseFloat((((krw - kr) / krw) * 100).toFixed(2));
+      }
+      changed++;
+    }
+  });
+  if (changed > 0) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); // 직접 저장 (이 시점엔 db 미연결)
+    goldMigrationChanged = true;
+  }
+  localStorage.setItem(FLAG, '1');
+  if (changed > 0) setTimeout(() => showToast(`💰 금 환산 ${changed}개 날짜 재계산 완료`), 600);
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────
 initData();
+migrateGoldRecalc(); // 트로이온스 공식으로 과거 데이터 일괄 재계산
 renderEntryFields(); // 입력 모달의 동적 필드 미리 생성
 renderHome();
 initFirebase();
