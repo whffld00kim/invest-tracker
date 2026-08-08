@@ -11,6 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="투자 트래커">
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
@@ -270,6 +271,22 @@
     .btn-sync-up { background: var(--primary); color: #fff; }
     .btn-sync-down { background: #0f172a; color: #fff; }
     .btn-sync-up span, .btn-sync-down span { font-size: 11px; font-weight: 400; opacity: .8; }
+    /* 저장 권한 (Google 로그인) */
+    #auth-row {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 10px 12px; margin-bottom: 14px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+      font-size: 13px; color: var(--text-muted);
+    }
+    #auth-state { flex: 1; min-width: 0; line-height: 1.4; }
+    #auth-state b { color: var(--text); font-weight: 600; }
+    #btn-auth {
+      padding: 7px 12px; border: 1px solid var(--border); border-radius: 8px;
+      background: var(--card); color: var(--text);
+      font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    }
+    #btn-auth:disabled { opacity: .5; cursor: default; }
+
     #btn-sync-disconnect {
       width: 100%; padding: 10px; margin-top: 8px;
       background: transparent; color: #ef4444;
@@ -434,6 +451,11 @@
       <button class="modal-close" id="close-sync">✕</button>
     </div>
     <p class="sync-info">같은 동기화 키를 사용하는 기기끼리 데이터가 동기화됩니다.<br>처음 연결 시 이 기기의 데이터를 올릴지, 클라우드 데이터를 받을지 선택하세요.</p>
+    <!-- 받아오기는 로그인 없이 되고, 올리기만 로그인이 필요하다 -->
+    <div id="auth-row">
+      <span id="auth-state">클라우드에 <b>저장</b>하려면 로그인이 필요합니다</span>
+      <button id="btn-auth">Google 로그인</button>
+    </div>
     <div class="form-row">
       <label>동기화 키</label>
       <input type="text" id="sync-key-input" placeholder="예) kim2024 (영문/숫자)">
@@ -1254,10 +1276,30 @@ let db = null;
 let syncUnsubscribe = null;
 let lastUploadTime = 0;
 
+// ── 저장 권한 ────────────────────────────────────────────────────────
+// 보안 규칙상 읽기는 누구나, 쓰기는 로그인한 허용 계정만 된다.
+// 그래서 앱 전체를 잠그지 않는다 — 기록을 보는 데는 로그인이 필요 없고,
+// 오프라인에서도 종전처럼 열린다. 클라우드에 올릴 때만 계정을 확인한다.
+let auth = null;
+let currentUser = null;
+let pendingUpload = false;   // 로그아웃 상태에서 저장한 게 있으면, 로그인 직후 올린다
+
 function initFirebase() {
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.firestore();
+    auth = firebase.auth();
+
+    auth.onAuthStateChanged(user => {
+      currentUser = user;
+      renderAuthRow();
+      const key = localStorage.getItem(SYNC_KEY_STORAGE);
+      if (user && pendingUpload && key) {
+        pendingUpload = false;
+        uploadToFirebase(key);
+      }
+    });
+
     const savedKey = localStorage.getItem(SYNC_KEY_STORAGE);
     if (savedKey) {
       document.getElementById('sync-key-input').value = savedKey;
@@ -1266,6 +1308,40 @@ function initFirebase() {
       if (goldMigrationChanged) uploadToFirebase(savedKey);
     }
   } catch(e) { console.error('Firebase 초기화 실패:', e); }
+}
+
+function renderAuthRow() {
+  const state = document.getElementById('auth-state');
+  const btn = document.getElementById('btn-auth');
+  if (!state || !btn) return;
+  btn.disabled = false;
+  if (currentUser) {
+    state.innerHTML = `<b>${currentUser.email || currentUser.displayName || '로그인됨'}</b><br>클라우드 저장이 켜져 있습니다`;
+    btn.textContent = '로그아웃';
+  } else {
+    state.innerHTML = '클라우드에 <b>저장</b>하려면 로그인이 필요합니다<br>받아오기는 로그인 없이도 됩니다';
+    btn.textContent = 'Google 로그인';
+  }
+}
+
+function toggleAuth() {
+  if (!auth) return;
+  const btn = document.getElementById('btn-auth');
+  if (currentUser) { auth.signOut(); return; }
+
+  if (btn) btn.disabled = true;
+  const provider = new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(provider).catch(err => {
+    if (btn) btn.disabled = false;
+    // 홈화면에 추가한 PWA나 인앱 브라우저에서는 팝업이 막힌다
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment') {
+      auth.signInWithRedirect(provider);
+      return;
+    }
+    if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') return;
+    console.warn('로그인 실패:', err.code, err.message);
+    showToast('로그인 실패 (' + err.code + ')', 4000);
+  });
 }
 
 function startSync(key) {
@@ -1299,12 +1375,23 @@ function startSync(key) {
 
 function uploadToFirebase(key) {
   if (!db || !key) return;
+
+  // 로그인 여부를 앱이 미리 판단하지 않고 일단 올려본다. 권한 판정은 보안 규칙의
+  // 몫이고, 앱이 흉내내면 규칙을 바꿀 때마다 둘이 어긋난다.
+  // 거부당해도 입력은 이미 localStorage에 들어 있어 잃는 값은 없다.
   lastUploadTime = Date.now();
   db.collection('sync').doc(key).set({
     payload: JSON.stringify(loadData()),
     updatedAt: Date.now()
-  }).then(() => setSyncStatus('connected'))
-    .catch(() => setSyncStatus('offline'));
+  }).then(() => { pendingUpload = false; setSyncStatus('connected'); })
+    .catch(err => {
+      setSyncStatus('offline');
+      if (err.code !== 'permission-denied') return;   // 그냥 네트워크가 끊긴 경우
+      pendingUpload = true;                            // 로그인하면 그때 올린다
+      showToast(currentUser
+        ? '이 계정은 저장 권한이 없습니다 (' + (currentUser.email || currentUser.uid) + ')'
+        : '이 기기에 저장됨 · 클라우드에 올리려면 ☁️에서 로그인하세요', 5000);
+    });
 }
 
 function stopSync() {
@@ -1340,6 +1427,8 @@ document.getElementById('modal-sync').addEventListener('click', e => {
   if (e.target === document.getElementById('modal-sync'))
     document.getElementById('modal-sync').classList.remove('open');
 });
+document.getElementById('btn-auth').addEventListener('click', toggleAuth);
+
 // ⬆️ 이 기기 → 클라우드 (내 데이터를 올리고 이후 실시간 동기화)
 document.getElementById('btn-sync-upload').addEventListener('click', () => {
   const key = document.getElementById('sync-key-input').value.trim();
