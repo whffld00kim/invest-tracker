@@ -17,6 +17,10 @@ on:
         description: '휴장일이어도 강행'
         type: boolean
         default: false
+      dry:
+        description: '수집만 하고 저장은 하지 않음 (점검용)'
+        type: boolean
+        default: false
 
 # 동시에 두 번 돌아 서로의 저장을 덮어쓰지 않도록
 concurrency:
@@ -40,4 +44,5 @@ jobs:
         run: |
           node scripts/collect.js \
             ${{ inputs.date && format('--date {0}', inputs.date) || '' }} \
-            ${{ inputs.force && '--force' || '' }}
+            ${{ inputs.force && '--force' || '' }} \
+            ${{ inputs.dry && '--dry' || '' }}
