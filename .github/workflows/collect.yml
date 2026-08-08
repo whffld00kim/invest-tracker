@@ -1,0 +1,43 @@
+name: 지표 자동 입력
+
+# 평일 아침 10:30 KST = 01:30 UTC.
+# GitHub의 예약 실행은 혼잡하면 몇 분 밀릴 수 있다. 손으로 넣던 시간도
+# 일정하지 않았으니 그대로 둔다.
+#
+# 공휴일은 cron이 못 거르므로 스크립트가 코스피 거래 여부를 보고 스스로 건너뛴다.
+on:
+  schedule:
+    - cron: '30 1 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '기록할 날짜 (YYYY-MM-DD, 비우면 오늘)'
+        required: false
+      force:
+        description: '휴장일이어도 강행'
+        type: boolean
+        default: false
+
+# 동시에 두 번 돌아 서로의 저장을 덮어쓰지 않도록
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 수집 및 저장
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          node scripts/collect.js \
+            ${{ inputs.date && format('--date {0}', inputs.date) || '' }} \
+            ${{ inputs.force && '--force' || '' }}
