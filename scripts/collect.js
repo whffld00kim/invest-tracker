@@ -227,12 +227,15 @@ async function writePayload(token, data) {
     process.exit(1);
   }
 
-  if (DRY) { console.log('\n--dry 이므로 저장하지 않았습니다.'); return; }
-
+  // 자격증명 확인은 --dry에서도 한다. 그래야 점검 실행이 시크릿까지 검사한다.
   const token = await accessToken();
   console.log(`\n인증: ${token ? '서비스 계정' : '공개 웹 키'}`);
 
   const data = await readPayload(token);
+  console.log(`클라우드 읽기 OK — 기존 ${Object.keys(data).length}일치`);
+
+  if (DRY) { console.log('--dry 이므로 저장하지 않았습니다.'); return; }
+
   const before = data[today];
   data[today] = { ...(before || {}), ...ordered };  // 손으로 넣은 값이 있으면 살려둔다
   await writePayload(token, data);
