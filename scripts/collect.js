@@ -124,7 +124,9 @@ async function isTradingDay(today) {
 async function accessToken() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) return null;
-  const sa = JSON.parse(raw);
+  // 키 파일을 그대로 시크릿에 넣으면 BOM이 앞에 붙어 오는 일이 잦다 (Windows에서
+  // 흔하다). 눈에 안 보이는 한 글자 때문에 JSON.parse가 깨지므로 미리 걷어낸다.
+  const sa = JSON.parse(raw.replace(/^﻿/, '').trim());
   const crypto = await import('node:crypto');
 
   const now = Math.floor(Date.now() / 1000);
