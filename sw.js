@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v12';
+const CACHE = 'invest-tracker-v13';
 const ASSETS = [
   './index.html',
   './manifest.json',

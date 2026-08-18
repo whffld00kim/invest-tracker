@@ -15,6 +15,9 @@
  *   node scripts/collect.js --dry      수집만 하고 화면 출력
  *   node scripts/collect.js --date 2026-08-07   특정 날짜로 저장
  *   node scripts/collect.js --force    거래일이 아니어도 강행
+ *   node scripts/collect.js --only "미국채 30년"   지표 하나만 수집해 그날 기록에 덧붙인다
+ *                                     (지표를 새로 붙인 날, 이미 저장된 다른 값을
+ *                                      건드리지 않고 그 지표만 채워 넣을 때 쓴다)
  */
 
 const PROJECT = 'invest-tracker-f7e3f';
@@ -33,6 +36,13 @@ const FORCE = args.includes('--force');
 const DATE_ARG = (() => {
   const i = args.indexOf('--date');
   return i >= 0 ? args[i + 1] : null;
+})();
+// 쉼표로 여러 개도 된다: --only "미국채 30년,국채10년"
+const ONLY = (() => {
+  const i = args.indexOf('--only');
+  if (i < 0) return null;
+  const names = (args[i + 1] || '').split(',').map(s => s.trim()).filter(Boolean);
+  return names.length ? names : null;
 })();
 
 // ── 유틸 ────────────────────────────────────────────────────────────────
@@ -80,6 +90,7 @@ const SOURCES = [
   ['국채10년',    bond('KR10YT=RR')],
   ['미국채 2년',  bond('US2YT=RR')],
   ['미국채 10년', bond('US10YT=RR')],
+  ['미국채 30년', bond('US30YT=RR')],
   ['원달러환율',  marketIndex('exchange', 'FX_USDKRW')],
   ['달러인덱스',  marketIndex('exchange', '.DXY')],
   ['코스피지수',  naverIndex('KOSPI')],
@@ -201,9 +212,19 @@ async function writePayload(token, data) {
     }
   }
 
+  const targets = ONLY ? SOURCES.filter(([n]) => ONLY.includes(n)) : SOURCES;
+  if (ONLY) {
+    const unknown = ONLY.filter(n => !SOURCES.some(([s]) => s === n));
+    if (unknown.length) {
+      console.error(`--only 에 없는 지표명: ${unknown.join(', ')}`);
+      process.exit(1);
+    }
+    console.log(`--only ${ONLY.join(', ')} — 이 지표만 수집합니다 (나머지는 그대로 둡니다)`);
+  }
+
   const values = {};
   const failed = [];
-  await Promise.all(SOURCES.map(async ([name, fn]) => {
+  await Promise.all(targets.map(async ([name, fn]) => {
     try {
       const v = await fn();
       if (v == null) throw new Error('값이 비어 있음');
@@ -216,7 +237,7 @@ async function writePayload(token, data) {
   addDerived(values);
 
   const ordered = {};
-  for (const [name] of SOURCES) if (values[name] != null) ordered[name] = values[name];
+  for (const [name] of targets) if (values[name] != null) ordered[name] = values[name];
   for (const k of ['금 환산', '금 할인률', '삼성우비율']) if (values[k] != null) ordered[k] = values[k];
 
   console.log(`[${today}] 수집 ${Object.keys(ordered).length}개`);
@@ -224,7 +245,7 @@ async function writePayload(token, data) {
   if (failed.length) console.log('\n실패:\n  ' + failed.join('\n  '));
 
   // 절반 넘게 실패했으면 반쪽짜리 기록을 남기지 않는다
-  if (failed.length > SOURCES.length / 2) {
+  if (failed.length > targets.length / 2) {
     console.error('\n수집 실패가 너무 많습니다. 저장하지 않고 종료합니다.');
     process.exit(1);
   }

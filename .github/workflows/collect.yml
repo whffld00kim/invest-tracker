@@ -21,6 +21,9 @@ on:
         description: '수집만 하고 저장은 하지 않음 (점검용)'
         type: boolean
         default: false
+      only:
+        description: '이 지표만 수집 (쉼표로 여러 개). 나머지 저장값은 그대로 둔다'
+        required: false
 
 # 동시에 두 번 돌아 서로의 저장을 덮어쓰지 않도록
 concurrency:
@@ -45,4 +48,5 @@ jobs:
           node scripts/collect.js \
             ${{ inputs.date && format('--date {0}', inputs.date) || '' }} \
             ${{ inputs.force && '--force' || '' }} \
-            ${{ inputs.dry && '--dry' || '' }}
+            ${{ inputs.dry && '--dry' || '' }} \
+            ${{ inputs.only && format('--only "{0}"', inputs.only) || '' }}

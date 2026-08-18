@@ -538,6 +538,7 @@ const DEFAULT_INDICATORS = [
   { id: 'f-kr10',      name: '국채10년',    group: '금리',          placeholder: '예) 3.820' },
   { id: 'f-us2',       name: '미국채 2년',  group: '금리',          placeholder: '예) 3.845' },
   { id: 'f-us10',      name: '미국채 10년', group: '금리',          placeholder: '예) 4.338' },
+  { id: 'f-us30',      name: '미국채 30년', group: '금리',          placeholder: '예) 5.320' },
   { id: 'f-usd',       name: '원달러환율',  group: '환율',          placeholder: '예) 1497.9' },
   { id: 'f-dxy',       name: '달러인덱스',  group: '환율',          placeholder: '예) 99.29' },
   { id: 'f-kospi',     name: '코스피지수',  group: '주가지수',      placeholder: '예) 5638.20' },
@@ -561,6 +562,22 @@ const DEFAULT_INDICATORS = [
 ];
 
 const INDICATORS_STORAGE = 'invest_indicators_v1';
+const REMOVED_STORAGE = 'invest_indicators_removed_v1';
+
+// DEFAULT_INDICATORS에 나중에 더한 지표. 지표 목록은 기기별 localStorage에만 있고
+// 클라우드에 없어서, 기본값만 고치면 이미 쓰던 기기에는 나타나지 않는다.
+// 그래서 저장된 목록에 같은 자리로 끼워 넣어 준다.
+const ADDED_LATER = [
+  { after: '미국채 10년', name: '미국채 30년' },
+];
+
+function getRemovedIndicators() {
+  try { return JSON.parse(localStorage.getItem(REMOVED_STORAGE) || '[]'); } catch { return []; }
+}
+function rememberRemoved(name) {
+  const list = getRemovedIndicators();
+  if (!list.includes(name)) localStorage.setItem(REMOVED_STORAGE, JSON.stringify([...list, name]));
+}
 
 function getIndicators() {
   try {
@@ -574,6 +591,19 @@ function getIndicators() {
         ind.autoFormula = ind.autoFormula.replace('28.3495', '31.1035');
       }
     });
+    // 나중에 더한 기본 지표를 저장된 목록에 끼워 넣는다.
+    // 사용자가 일부러 지운 것을 되살리지 않도록 '지운 지표' 목록과 대조한다.
+    const removed = getRemovedIndicators();
+    let grew = false;
+    ADDED_LATER.forEach(({ after, name }) => {
+      if (parsed.some(i => i.name === name) || removed.includes(name)) return;
+      const def = DEFAULT_INDICATORS.find(i => i.name === name);
+      if (!def) return;
+      const at = parsed.findIndex(i => i.name === after);
+      parsed.splice(at >= 0 ? at + 1 : parsed.length, 0, JSON.parse(JSON.stringify(def)));
+      grew = true;
+    });
+    if (grew) saveIndicators(parsed);
     return parsed;
   } catch {
     return JSON.parse(JSON.stringify(DEFAULT_INDICATORS));
@@ -1202,6 +1232,7 @@ function deleteIndicator(id) {
   if (!confirm(`"${ind.name}" 지표를 삭제할까요?\n(기존 입력된 데이터는 표/차트에 남아 있습니다)`)) return;
   const next = list.filter(i => i.id !== id);
   saveIndicators(next);
+  rememberRemoved(ind.name);   // 나중에 더한 기본 지표가 되살아나지 않도록
   renderSettingsTab();
   showToast(`🗑 ${ind.name} 삭제됨`);
 }
@@ -1236,6 +1267,7 @@ document.getElementById('settings-indicator-list').addEventListener('click', e =
 document.getElementById('btn-settings-reset').addEventListener('click', () => {
   if (!confirm('지표 목록을 기본값으로 되돌릴까요?\n(추가하거나 삭제한 지표 설정이 사라집니다. 입력된 데이터는 영향 없음)')) return;
   localStorage.removeItem(INDICATORS_STORAGE);
+  localStorage.removeItem(REMOVED_STORAGE);
   renderSettingsTab();
   showToast('🔄 기본값으로 초기화됨');
 });
