@@ -217,7 +217,9 @@ async function writePayload(token, data) {
     const unknown = ONLY.filter(n => !SOURCES.some(([s]) => s === n));
     if (unknown.length) {
       console.error(`--only 에 없는 지표명: ${unknown.join(', ')}`);
-      process.exit(1);
+      console.error(`쓸 수 있는 이름: ${SOURCES.map(([n]) => n).join(', ')}`);
+      process.exitCode = 1;   // exit()은 윈도우에서 libuv assertion을 낸다
+      return;
     }
     console.log(`--only ${ONLY.join(', ')} — 이 지표만 수집합니다 (나머지는 그대로 둡니다)`);
   }
