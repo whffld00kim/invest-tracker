@@ -181,23 +181,52 @@ async function readPayload(token) {
   return s ? JSON.parse(s) : {};
 }
 
+// Firestore 쓰기는 가끔 429(RESOURCE_EXHAUSTED, "maximum bandwidth for writes")로 튕긴다.
+// 2026-08-25에 이것 하나로 그날 기록이 통째로 빠졌다 — 수집도 읽기도 다 됐는데
+// 마지막 쓰기 한 번이 실패해 손으로 재실행해야 했다. 구글 안내대로 지수 백오프로 다시 건다.
+// 401·403·400 같은 영구 오류는 몇 번을 보내도 같으므로 재시도하지 않고 바로 올린다.
+const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
+const RETRY_DELAYS = [3000, 6000, 12000];   // 마지막 시도까지 최대 21초
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 async function writePayload(token, data) {
   const mask = 'updateMask.fieldPaths=payload&updateMask.fieldPaths=updatedAt';
-  const res = await fetch(fsUrl(token, `?${mask}`), {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  const body = JSON.stringify({
+    fields: {
+      payload: { stringValue: JSON.stringify(data) },
+      updatedAt: { integerValue: String(Date.now()) },
     },
-    body: JSON.stringify({
-      fields: {
-        payload: { stringValue: JSON.stringify(data) },
-        updatedAt: { integerValue: String(Date.now()) },
-      },
-    }),
-    signal: AbortSignal.timeout(30000),
   });
-  if (!res.ok) throw new Error(`Firestore 쓰기 실패 ${res.status}: ${await res.text()}`);
+
+  for (let i = 0; ; i++) {
+    let res = null, netErr = null;
+    try {
+      res = await fetch(fsUrl(token, `?${mask}`), {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body,
+        signal: AbortSignal.timeout(30000),
+      });
+    } catch (e) {
+      netErr = e;   // 타임아웃·연결 끊김. 다시 걸어볼 값어치가 있다
+    }
+    if (res && res.ok) {
+      if (i) console.log(`쓰기 성공 (재시도 ${i}회째)`);
+      return;
+    }
+
+    const detail = res ? `${res.status}: ${await res.text()}` : netErr.message;
+    const again = res ? RETRY_STATUS.has(res.status) : true;
+    if (!again || i >= RETRY_DELAYS.length) throw new Error(`Firestore 쓰기 실패 ${detail}`);
+
+    console.error(`쓰기 실패 ${detail}
+  ${RETRY_DELAYS[i] / 1000}초 뒤 다시 시도합니다 (${i + 1}/${RETRY_DELAYS.length})`);
+    await sleep(RETRY_DELAYS[i]);
+  }
 }
 
 // ── 실행 ────────────────────────────────────────────────────────────────
