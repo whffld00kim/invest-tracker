@@ -1,0 +1,14 @@
+# 서비스계정 키 — 절대 커밋 금지. Actions는 시크릿(FIREBASE_SERVICE_ACCOUNT)으로 받는다
+*firebase-adminsdk*.json
+*service-account*.json
+*-sa-key.json
+.env
+.env.*
+
+# 의존성·산출물
+node_modules/
+npm-debug.log*
+
+# OS·에디터
+.DS_Store
+Thumbs.db

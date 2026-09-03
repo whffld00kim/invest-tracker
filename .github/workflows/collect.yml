@@ -38,6 +38,11 @@ concurrency:
   group: collect
   cancel-in-progress: false
 
+# 수집은 저장소를 읽기만 한다. 기본 토큰이 쓰기까지 갖고 돌 이유가 없다 (2026-09-03).
+# 사용하는 액션이 변조되는 사고가 나도 이 토큰으로는 저장소를 고칠 수 없다.
+permissions:
+  contents: read
+
 jobs:
   collect:
     runs-on: ubuntu-latest
@@ -50,12 +55,21 @@ jobs:
           node-version: '22'
 
       - name: 수집 및 저장
+        # 수동 실행 입력값은 ${{ }}로 run: 에 직접 끼우지 않고 env로 넘긴다 (2026-09-03).
+        # 직접 끼우면 입력값이 셸 명령의 일부가 된다 — 지금은 소유자만 실행할 수 있어
+        # 실해가 없지만, 협업자를 더하는 순간 명령 주입 통로가 된다.
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          IN_DATE: ${{ inputs.date }}
+          IN_FORCE: ${{ inputs.force }}
+          IN_DRY: ${{ inputs.dry }}
+          IN_ONLY: ${{ inputs.only }}
+          IS_SCHEDULE: ${{ github.event_name == 'schedule' }}
         run: |
-          node scripts/collect.js \
-            ${{ inputs.date && format('--date {0}', inputs.date) || '' }} \
-            ${{ inputs.force && '--force' || '' }} \
-            ${{ inputs.dry && '--dry' || '' }} \
-            ${{ inputs.only && format('--only "{0}"', inputs.only) || '' }} \
-            ${{ github.event_name == 'schedule' && '--skip-if-recorded' || '' }}
+          args=()
+          [ -n "$IN_DATE" ] && args+=(--date "$IN_DATE")
+          [ "$IN_FORCE" = "true" ] && args+=(--force)
+          [ "$IN_DRY" = "true" ] && args+=(--dry)
+          [ -n "$IN_ONLY" ] && args+=(--only "$IN_ONLY")
+          [ "$IS_SCHEDULE" = "true" ] && args+=(--skip-if-recorded)
+          node scripts/collect.js "${args[@]}"
