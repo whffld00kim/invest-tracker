@@ -37,6 +37,12 @@ const DATE_ARG = (() => {
   const i = args.indexOf('--date');
   return i >= 0 ? args[i + 1] : null;
 })();
+// 예약(cron) 실행 전용. 오늘 기록이 이미 있으면 저장하지 않는다.
+//   GitHub 예약 실행이 매일 몇 시간씩 밀리고, 그 사이 PC(invest-notify.js)가
+//   workflow_dispatch로 먼저 값을 넣는다. 밀린 예약 실행이 뒤늦게 도착해 그 값을
+//   오후 시세로 덮어쓰던 것을 막는다 (2026-09-01~03 사흘 연속 실제로 덮어썼다).
+//   수동 실행·--only 는 이 플래그를 안 받으므로 종전대로 덮어쓴다(의도된 재실행).
+const SKIP_IF_RECORDED = args.includes('--skip-if-recorded');
 // 쉼표로 여러 개도 된다: --only "미국채 30년,국채10년"
 const ONLY = (() => {
   const i = args.indexOf('--only');
@@ -288,9 +294,16 @@ async function writePayload(token, data) {
   const data = await readPayload(token);
   console.log(`클라우드 읽기 OK — 기존 ${Object.keys(data).length}일치`);
 
+  const before = data[today];
+  // 오늘 기록이 있고, 방금 모은 지표가 전부 거기 이미 들어 있으면 예약 실행은 물러난다.
+  // "전부"를 따지는 이유: 아침 실행이 일부 지표를 놓친 채 저장됐다면 빈칸은 채워야 한다.
+  if (SKIP_IF_RECORDED && before && Object.keys(ordered).every(k => before[k] != null)) {
+    console.log(`오늘(${today}) 기록이 이미 있습니다 (${Object.keys(before).length}개). 예약 실행이라 덮어쓰지 않고 종료합니다.`);
+    return;
+  }
+
   if (DRY) { console.log('--dry 이므로 저장하지 않았습니다.'); return; }
 
-  const before = data[today];
   data[today] = { ...(before || {}), ...ordered };  // 손으로 넣은 값이 있으면 살려둔다
   await writePayload(token, data);
 

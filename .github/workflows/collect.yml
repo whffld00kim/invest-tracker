@@ -6,6 +6,12 @@ name: 지표 자동 입력
 #   일어나 08-28에 :37로 옮겼다. 정각·30분으로 되돌리지 말 것.
 #   그래도 누락되면 PC의 invest-notify.js가 12시 이후 자가 치유로 직접 트리거한다.
 #
+# ⚠ 2026-09-03부터 **주 경로는 이 cron이 아니라 PC다.** 예약 실행이 매일 5시간씩 밀려
+#   (9/1~9/3 전부 15시대 실행) 10:37 스냅샷이 안 나오므로, PC 작업 스케줄러가 10:37에
+#   `invest-notify.js --heal-now`로 workflow_dispatch를 당긴다 (dispatch는 몇 초 안에 돈다).
+#   이 cron은 PC가 꺼진 날의 **예비**다. 그래서 schedule 이벤트에만 --skip-if-recorded를
+#   붙여, 밀린 예약 실행이 뒤늦게 와도 이미 있는 10:37 값을 덮어쓰지 못하게 한다.
+#
 # 공휴일은 cron이 못 거르므로 스크립트가 코스피 거래 여부를 보고 스스로 건너뛴다.
 on:
   schedule:
@@ -51,4 +57,5 @@ jobs:
             ${{ inputs.date && format('--date {0}', inputs.date) || '' }} \
             ${{ inputs.force && '--force' || '' }} \
             ${{ inputs.dry && '--dry' || '' }} \
-            ${{ inputs.only && format('--only "{0}"', inputs.only) || '' }}
+            ${{ inputs.only && format('--only "{0}"', inputs.only) || '' }} \
+            ${{ github.event_name == 'schedule' && '--skip-if-recorded' || '' }}
