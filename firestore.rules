@@ -10,12 +10,14 @@ rules_version = '2';
 // 읽기를 열어두면 새 기기에서 로그인 없이도 기록을 볼 수 있고,
 // 오프라인 PWA 동작도 지금 그대로 유지된다.
 //
-// 쓰기 권한은 allowedUsers/{uid} 문서가 있는 계정만 갖는다.
-// 허용 계정을 규칙이 아니라 DB에 두는 이유: 이 저장소는 공개라서
-// uid를 소스에 적어둘 수 없고, 사람을 더하고 뺄 때 규칙을 다시
-// 배포하지 않아도 된다.
+// ⚠ 2026-09-03부터 앱(클라이언트)의 쓰기는 **전부 거부**한다.
+// 앱이 올릴 때는 기기 데이터로 문서를 통째로 덮어쓰는 방식이라, 오래 안 켠 기기에서
+// 올리면 그 사이 자동 수집된 날들이 전부 사라진다. 그래서 앱을 받기 전용으로 바꾸고
+// 서버에서도 막는다 — 옛 캐시 버전 앱이 남아 있어도 못 올린다.
+// 기록은 GitHub Actions(collect.js)의 서비스 계정만 쓰고, 서비스 계정은 이 규칙을 거치지 않는다.
+// 값을 고쳐야 하면 Actions의 --only 실행이나 서비스 계정(Claude)으로 그 날짜만 고친다.
 //
-// GitHub Actions의 자동 입력은 서비스 계정으로 붙으므로 이 규칙을 거치지 않는다.
+// allowedUsers/ 컬렉션은 더 이상 쓰기 판정에 쓰이지 않지만, 되돌릴 때를 위해 남겨 둔다.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -29,8 +31,8 @@ service cloud.firestore {
 
     match /sync/{key} {
       allow read: if true;
-      allow write: if request.auth != null
-                   && exists(/databases/$(database)/documents/allowedUsers/$(request.auth.uid));
+      // 앱에서는 못 쓴다 (2026-09-03). 서비스 계정(Actions·Claude)만 쓴다.
+      allow write: if false;
     }
 
     // 위에 적지 않은 경로는 전부 거부된다.

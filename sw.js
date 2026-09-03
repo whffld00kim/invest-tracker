@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v13';
+const CACHE = 'invest-tracker-v14';   // v14: 앱 읽기 전용화 — 올리기·직접 입력·복원·삭제 제거 (2026-09-03)
 const ASSETS = [
   './index.html',
   './manifest.json',
