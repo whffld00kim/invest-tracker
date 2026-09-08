@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       date:
-        description: '기록할 날짜 (YYYY-MM-DD, 비우면 오늘)'
+        description: '기록할 날짜 (YYYY-MM-DD, 비우면 오늘. drop과 함께면 쉼표로 여러 날짜)'
         required: false
       force:
         description: '휴장일이어도 강행'
@@ -31,6 +31,9 @@ on:
         default: false
       only:
         description: '이 지표만 수집 (쉼표로 여러 개). 나머지 저장값은 그대로 둔다'
+        required: false
+      drop:
+        description: '수집 없이 date 기록에서 이 지표만 지움 (쉼표로 여러 개). 휴장일에 낡은 종가가 들어간 날을 고칠 때'
         required: false
 
 # 동시에 두 번 돌아 서로의 저장을 덮어쓰지 않도록
@@ -64,6 +67,7 @@ jobs:
           IN_FORCE: ${{ inputs.force }}
           IN_DRY: ${{ inputs.dry }}
           IN_ONLY: ${{ inputs.only }}
+          IN_DROP: ${{ inputs.drop }}
           IS_SCHEDULE: ${{ github.event_name == 'schedule' }}
         run: |
           args=()
@@ -71,5 +75,6 @@ jobs:
           [ "$IN_FORCE" = "true" ] && args+=(--force)
           [ "$IN_DRY" = "true" ] && args+=(--dry)
           [ -n "$IN_ONLY" ] && args+=(--only "$IN_ONLY")
+          [ -n "$IN_DROP" ] && args+=(--drop "$IN_DROP")
           [ "$IS_SCHEDULE" = "true" ] && args+=(--skip-if-recorded)
           node scripts/collect.js "${args[@]}"

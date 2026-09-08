@@ -18,6 +18,15 @@
  *   node scripts/collect.js --only "미국채 30년"   지표 하나만 수집해 그날 기록에 덧붙인다
  *                                     (지표를 새로 붙인 날, 이미 저장된 다른 값을
  *                                      건드리지 않고 그 지표만 채워 넣을 때 쓴다)
+ *   node scripts/collect.js --drop "나스닥,다우존스,S&P500" --date 2026-09-08
+ *                                     그 날짜 기록에서 그 지표만 지운다 (앱·볼트에 "-"로 보인다).
+ *                                     휴장일에 낡은 종가가 들어간 날을 고칠 때 쓴다.
+ *                                     --date 는 쉼표로 여러 날짜도 된다. 수집은 하지 않는다
+ *
+ * ⚠ 시장이 쉰 지표는 저장하지 않는다 (2026-09-08). 네이버는 휴장일에도 지난 종가를
+ *   closePrice로 주므로, 그대로 받으면 미국 휴장일 다음날 미국 지수가 전날 값으로 또 들어간다
+ *   (실제로 09-07 노동절 → 09-08 행에 09-04 종가). 응답의 localTradedAt으로 지표마다 가른다.
+ *   빠진 지표는 앱·볼트에 "-"로 보인다. 아래 「신선도 판정」 참고
  */
 
 const PROJECT = 'invest-tracker-f7e3f';
@@ -44,12 +53,14 @@ const DATE_ARG = (() => {
 //   수동 실행·--only 는 이 플래그를 안 받으므로 종전대로 덮어쓴다(의도된 재실행).
 const SKIP_IF_RECORDED = args.includes('--skip-if-recorded');
 // 쉼표로 여러 개도 된다: --only "미국채 30년,국채10년"
-const ONLY = (() => {
-  const i = args.indexOf('--only');
+const listArg = flag => {
+  const i = args.indexOf(flag);
   if (i < 0) return null;
   const names = (args[i + 1] || '').split(',').map(s => s.trim()).filter(Boolean);
   return names.length ? names : null;
-})();
+};
+const ONLY = listArg('--only');
+const DROP = listArg('--drop');
 
 // ── 유틸 ────────────────────────────────────────────────────────────────
 const num = s => {
@@ -82,37 +93,70 @@ const API = 'https://api.stock.naver.com';
 const MOBILE = 'https://m.stock.naver.com/api';
 const POLL = 'https://polling.finance.naver.com/api/realtime';
 
-const naverIndex = code => async () => num((await getJson(`${MOBILE}/index/${code}/basic`)).closePrice);
-const naverStock = code => async () => num((await getJson(`${MOBILE}/stock/${code}/basic`)).closePrice);
-const worldIndex = code => async () => num((await getJson(`${POLL}/worldstock/index/${code}`)).datas[0].closePrice);
-const bond = code => async () => num((await getJson(`${API}/marketindex/bond/${encodeURIComponent(code)}`)).closePrice);
+// 각 함수는 { v: 값, at: 거래소 현지시각(localTradedAt) } 을 돌려준다. at은 신선도 판정에 쓴다
+const pick = d => ({ v: num(d.closePrice), at: d.localTradedAt });
+const naverIndex = code => async () => pick(await getJson(`${MOBILE}/index/${code}/basic`));
+const naverStock = code => async () => pick(await getJson(`${MOBILE}/stock/${code}/basic`));
+const worldIndex = code => async () => pick((await getJson(`${POLL}/worldstock/index/${code}`)).datas[0]);
+const bond = code => async () => pick(await getJson(`${API}/marketindex/bond/${encodeURIComponent(code)}`));
 const marketIndex = (cat, code) => async () => {
   const d = await getJson(`${API}/marketindex/${cat}/${code}`);
-  return num(d.closePrice ?? d.exchangeInfo?.closePrice);
+  return pick(d.closePrice != null ? d : (d.exchangeInfo ?? d));   // 환율은 exchangeInfo 안에 있다
+};
+const upbit = market => async () => {
+  const t = (await getJson(`https://api.upbit.com/v1/ticker?markets=${market}`, {}))[0];
+  const ymd = String(t.trade_date_kst || '');
+  return { v: t.trade_price, at: ymd.length === 8 ? `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6)}` : '' };
 };
 
+// [이름, 시장, 수집 함수]. 시장은 신선도 판정 기준이다 (아래 isFresh)
+//   kr     한국 시장 — 현지 날짜가 오늘이어야 한다
+//   world  해외 시장 — 현지 날짜가 오늘의 직전 평일 이상이어야 한다
+//   always 24시간 시장 — 항상 받는다
 const SOURCES = [
-  ['국채 3년',    bond('KR3YT=RR')],
-  ['국채10년',    bond('KR10YT=RR')],
-  ['미국채 2년',  bond('US2YT=RR')],
-  ['미국채 10년', bond('US10YT=RR')],
-  ['미국채 30년', bond('US30YT=RR')],
-  ['원달러환율',  marketIndex('exchange', 'FX_USDKRW')],
-  ['달러인덱스',  marketIndex('exchange', '.DXY')],
-  ['코스피지수',  naverIndex('KOSPI')],
-  ['코스닥지수',  naverIndex('KOSDAQ')],
-  ['나스닥',      worldIndex('.IXIC')],
-  ['다우존스',    worldIndex('.DJI')],
-  ['S&P500',      worldIndex('.INX')],
-  ['국제 금',     marketIndex('metals', 'GCcv1')],      // COMEX 금 선물, USD/트로이온스
-  ['국내 금',     marketIndex('metals', 'M04020000')],  // KRX 금시장, 원/g
-  ['구리',        marketIndex('metals', 'CMCU0')],      // LME 현물, USD/MT
-  ['원유',        marketIndex('energy', 'CLcv1')],      // WTI, USD/배럴
-  ['비트코인',    async () => (await getJson('https://api.upbit.com/v1/ticker?markets=KRW-BTC', {}))[0].trade_price],
-  ['삼성전자',    naverStock('005930')],
-  ['삼성전자우',  naverStock('005935')],
-  ['에이피알',    naverStock('278470')],
+  ['국채 3년',    'kr',     bond('KR3YT=RR')],
+  ['국채10년',    'kr',     bond('KR10YT=RR')],
+  ['미국채 2년',  'world',  bond('US2YT=RR')],
+  ['미국채 10년', 'world',  bond('US10YT=RR')],
+  ['미국채 30년', 'world',  bond('US30YT=RR')],
+  ['원달러환율',  'kr',     marketIndex('exchange', 'FX_USDKRW')],   // 하나은행 고시
+  ['달러인덱스',  'world',  marketIndex('exchange', '.DXY')],
+  ['코스피지수',  'kr',     naverIndex('KOSPI')],
+  ['코스닥지수',  'kr',     naverIndex('KOSDAQ')],
+  ['나스닥',      'world',  worldIndex('.IXIC')],
+  ['다우존스',    'world',  worldIndex('.DJI')],
+  ['S&P500',      'world',  worldIndex('.INX')],
+  ['국제 금',     'world',  marketIndex('metals', 'GCcv1')],      // COMEX 금 선물, USD/트로이온스
+  ['국내 금',     'kr',     marketIndex('metals', 'M04020000')],  // KRX 금시장, 원/g
+  ['구리',        'world',  marketIndex('metals', 'CMCU0')],      // LME 현물, USD/MT
+  ['원유',        'world',  marketIndex('energy', 'CLcv1')],      // WTI, USD/배럴
+  ['비트코인',    'always', upbit('KRW-BTC')],
+  ['삼성전자',    'kr',     naverStock('005930')],
+  ['삼성전자우',  'kr',     naverStock('005935')],
+  ['에이피알',    'kr',     naverStock('278470')],
 ];
+const DERIVED = ['금 환산', '금 할인률', '삼성우비율'];
+
+// ── 신선도 판정 ─────────────────────────────────────────────────────────
+// 지표마다 시장이 다르다. 미국 휴장일에도 코스피는 열려 있으니 그날을 통째로 건너뛸 수 없고,
+// 그렇다고 네이버 closePrice를 그대로 받으면 지난 종가가 오늘 값으로 들어간다.
+// 응답의 localTradedAt(거래소 현지시각, 오프셋 포함)의 날짜로 지표별로 가른다 —
+// 휴장일 달력을 손으로 관리할 필요가 없다. 2026-09-07 노동절 실측:
+//   나스닥·다우·S&P500 → 09-04 (낡음)  /  미국채·달러인덱스·금·원유·구리 → 09-07 (전자·OTC 호가는 움직였다)
+// 즉 같은 휴장일에도 지표마다 갈리므로 "미국 휴장일이면 미국 것 전부 비움"으로 뭉뚱그리면 안 된다.
+// ⚠ 채권·달러인덱스는 거래소가 아니라 호가 피드라 휴장일에도 시각이 찍힌다. 이 판정은 거래소
+//   상장 지표(주가지수·선물)에서 정확하고, OTC 호가는 걸러내지 못한다.
+function prevWeekday(iso) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  do { d.setUTCDate(d.getUTCDate() - 1); } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+  return d.toISOString().slice(0, 10);
+}
+function isFresh(zone, at, today) {
+  if (zone === 'always') return true;
+  const local = String(at || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(local)) return true;   // 시각을 안 주면 판정할 수 없다 — 종전대로 받는다
+  return zone === 'kr' ? local === today : local >= prevWeekday(today);
+}
 
 // 앱이 입력 화면에서 자동으로 채우는 값들. 같은 식을 그대로 쓴다.
 function addDerived(v) {
@@ -239,6 +283,33 @@ async function writePayload(token, data) {
 (async () => {
   const today = DATE_ARG || kstToday();
 
+  // --drop: 수집 없이 그 날짜의 그 지표만 지운다. 저장이 기존 키를 살리는 병합이라
+  // 한번 들어간 낡은 값은 다시 수집해도 안 사라지므로 지우는 길이 따로 필요하다.
+  if (DROP) {
+    const dates = today.split(',').map(s => s.trim()).filter(Boolean);
+    const unknown = DROP.filter(n => !SOURCES.some(([s]) => s === n) && !DERIVED.includes(n));
+    if (unknown.length) {
+      console.error(`--drop 에 없는 지표명: ${unknown.join(', ')}`);
+      process.exitCode = 1;
+      return;
+    }
+    const token = await accessToken();
+    const data = await readPayload(token);
+    let n = 0;
+    for (const d of dates) {
+      if (!data[d]) { console.log(`${d}: 기록 없음`); continue; }
+      const hit = DROP.filter(k => k in data[d]);
+      for (const k of hit) delete data[d][k];
+      n += hit.length;
+      console.log(`${d}: ${hit.length ? hit.join(', ') + ' 지움' : '지울 값 없음'}`);
+    }
+    if (!n) return;
+    if (DRY) { console.log('--dry 이므로 저장하지 않았습니다.'); return; }
+    await writePayload(token, data);
+    console.log(`저장 완료 — ${n}개 값을 비웠습니다 (앱·볼트에 "-")`);
+    return;
+  }
+
   if (!FORCE) {
     const { ok, traded } = await isTradingDay(today);
     if (!ok) {
@@ -259,12 +330,21 @@ async function writePayload(token, data) {
     console.log(`--only ${ONLY.join(', ')} — 이 지표만 수집합니다 (나머지는 그대로 둡니다)`);
   }
 
+  // 다른 날짜로 저장할 때는 지금 시세를 과거 날짜에 넣는 것이라 신선도 기준이 없다
+  const checkFresh = today === kstToday();
+  if (!checkFresh) console.log(`--date ${today}: 오늘이 아니므로 휴장 판정을 하지 않습니다`);
+
   const values = {};
   const failed = [];
-  await Promise.all(targets.map(async ([name, fn]) => {
+  const stale = [];   // 시장이 쉬어 낡은 값. 실패가 아니므로 따로 센다 (종료코드·중단 판정에 안 들어간다)
+  await Promise.all(targets.map(async ([name, zone, fn]) => {
     try {
-      const v = await fn();
+      const { v, at } = await fn();
       if (v == null) throw new Error('값이 비어 있음');
+      if (checkFresh && !isFresh(zone, at, today)) {
+        stale.push(`${name}: 현지 마지막 거래 ${String(at).slice(0, 10)}`);
+        return;
+      }
       values[name] = v;
     } catch (e) {
       failed.push(`${name}: ${e.message}`);
@@ -275,10 +355,11 @@ async function writePayload(token, data) {
 
   const ordered = {};
   for (const [name] of targets) if (values[name] != null) ordered[name] = values[name];
-  for (const k of ['금 환산', '금 할인률', '삼성우비율']) if (values[k] != null) ordered[k] = values[k];
+  for (const k of DERIVED) if (values[k] != null) ordered[k] = values[k];
 
   console.log(`[${today}] 수집 ${Object.keys(ordered).length}개`);
   for (const [k, v] of Object.entries(ordered)) console.log(`  ${k.padEnd(12)} ${v}`);
+  if (stale.length) console.log('\n휴장 — 낡은 값이라 비움 (앱·볼트에 "-"):\n  ' + stale.join('\n  '));
   if (failed.length) console.log('\n실패:\n  ' + failed.join('\n  '));
 
   // 절반 넘게 실패했으면 반쪽짜리 기록을 남기지 않는다
