@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v18';   // v18: 저장된 사본으로 먼저 열고 뒤에서 새 파일을 받는다 (2026-09-29)
+const CACHE = 'invest-tracker-v19';   // v18: 저장된 사본으로 먼저 열고 뒤에서 새 파일을 받는다 (2026-09-29)
 const ASSETS = [
   './',
   './index.html',
@@ -26,7 +26,8 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+      // 이 앱의 옛 캐시만 지운다 (웹앱들이 github.io 한 주소를 나눠 써서 캐시 저장소가 하나다)
+      Promise.all(keys.filter(k => k.startsWith('invest-tracker-') && k !== CACHE).map(k => caches.delete(k)))
     )
   );
   self.clients.claim();
