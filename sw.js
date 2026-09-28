@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v16';   // v16: 태블릿 홈 한 화면에 (2026-09-28)
+const CACHE = 'invest-tracker-v17';   // v17: 탭 이동 멈춤 해소 + 당겨서 새로고침 막기 (2026-09-28)
 const ASSETS = [
   './index.html',
   './manifest.json',

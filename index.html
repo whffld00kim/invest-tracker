@@ -19,6 +19,8 @@
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
   <script src="./initial_data.js"></script>
   <style>
+/* 맨 위에서 아래로 당기면 크롬이 페이지를 새로고침하던 것을 막는다 (2026-09-28 사용자 요청 — 새로고침되며 로그인 화면이 다시 떴다) */
+html, body { overscroll-behavior-y: none; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
@@ -55,6 +57,11 @@
 
     .tab-content { display: none; height: 100%; overflow-y: auto; padding: 16px; }
     .tab-content.active { display: block; }
+    /* 표 탭은 숨길 때도 치우지 않고 안 보이게만 둔다 — 2만 칸 표의 배치 계산을 탭을 열 때마다
+       다시 하느라 멈췄다 (2026-09-28, PC에서도 0.5초). 보일 때와 같은 크기·같은 display를 유지해야 재계산이 없다.
+       content-visibility:hidden = 숨긴 동안 안쪽 계산을 건너뛰고 배치 결과는 보관 (다른 탭 전환도 가볍게) */
+    #tab-table { contain: strict; }
+    #tab-table:not(.active) { display: block; position: absolute; inset: 0; content-visibility: hidden; pointer-events: none; }
 
     /* ── 스와이프 애니메이션 ── */
     @keyframes swipeInFromRight {
@@ -462,7 +469,8 @@
       .entry-count { font-size: 13px; }
 
       /* ── 표: 글자 키우기 (화면 높이는 이미 다 쓴다) ── */
-      #tab-table.active { padding: 0; }
+      #tab-table { padding: 0; }
+      #tab-table:not(.active) { display: flex; flex-direction: column; }
       #tab-table > * { max-width: none; }
       .table-wrap { padding: 16px 28px; }
       table { font-size: 15px; }
@@ -822,10 +830,22 @@ function initData() {
 }
 
 // ── STORAGE ───────────────────────────────────────────────────────────
+// 탭을 옮길 때마다 250KB JSON을 다시 풀던 것을 원문이 같으면 재사용한다 (2026-09-28 — 탭 이동 멈춤).
+// 돌려준 객체를 고친 쪽은 반드시 saveData를 부르므로(그때 캐시도 바뀐다) 공유해도 된다
+let _dataRaw = null, _dataObj = {}, _dataVer = 0;
 function loadData() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; }
+  const raw = localStorage.getItem(STORAGE_KEY) || '{}';
+  if (raw !== _dataRaw) {
+    try { _dataObj = JSON.parse(raw); } catch { _dataObj = {}; }
+    _dataRaw = raw; _dataVer++;
+  }
+  return _dataObj;
 }
-function saveData(data) { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+function saveData(data) {
+  const raw = JSON.stringify(data);
+  localStorage.setItem(STORAGE_KEY, raw);
+  _dataRaw = raw; _dataObj = data; _dataVer++;
+}
 
 // ── TOAST ─────────────────────────────────────────────────────────────
 function showToast(msg, dur = 2500) {
@@ -1021,8 +1041,12 @@ function deleteEntry(date) {
 }
 
 // ── TABLE ──────────────────────────────────────────────────────────────
+let _tableKey = '';
 function renderTable() {
   const data = loadData();
+  const key = _dataVer + '|' + getFieldOrder().join(',');
+  if (key === _tableKey && document.querySelector('#table-wrap table')) return;
+  _tableKey = key;
   const dates = Object.keys(data).sort((a, b) => b.localeCompare(a)); // 최신 날짜 왼쪽, 오래된 날짜 오른쪽
   const wrap = document.getElementById('table-wrap');
   if (dates.length === 0) {
@@ -1050,19 +1074,29 @@ function renderTable() {
   wrap.innerHTML = html;
 }
 
+const _NF = [
+  new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }),
+  new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }),
+  new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+  new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }),
+];
 function formatNum(n) {
   if (n === undefined || n === null) return '-';
   const num = parseFloat(n);
   if (isNaN(num)) return n;
-  if (num >= 100000) return num.toLocaleString('ko-KR', { maximumFractionDigits: 0 });
-  if (num >= 1000)   return num.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
-  if (num >= 10)     return num.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return num.toLocaleString('ko-KR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  if (num >= 100000) return _NF[0].format(num);
+  if (num >= 1000)   return _NF[1].format(num);
+  if (num >= 10)     return _NF[2].format(num);
+  return _NF[3].format(num);
 }
 
 // ── GRAPH ──────────────────────────────────────────────────────────────
+let _graphKey = '';
 function renderIndicatorSelect() {
   const data = loadData();
+  const gkey = _dataVer + '|' + getFieldOrder().join(',') + '|' + isTablet();
+  if (gkey === _graphKey && document.querySelector('#chart-area canvas')) return;
+  _graphKey = gkey;
   const sel = document.getElementById('indicator-select');
   const current = sel.value;
 
