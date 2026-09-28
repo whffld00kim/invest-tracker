@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v15';   // v15: 태블릿 가로 화면 배치 (2026-09-28)
+const CACHE = 'invest-tracker-v16';   // v16: 태블릿 홈 한 화면에 (2026-09-28)
 const ASSETS = [
   './index.html',
   './manifest.json',
