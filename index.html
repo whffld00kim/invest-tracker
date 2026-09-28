@@ -370,6 +370,182 @@
       white-space: nowrap;
     }
     #toast.show { opacity: 1; }
+
+    /* 태블릿 가로 전용 판 — 폰에서는 보이지 않는다 */
+    .home-latest, .ind-picker { display: none; }
+
+    /* ============ 태블릿 (2026-09-28) ============
+       갤럭시 탭을 가로로 두고 쓸 때. 폰 화면(위 규칙 전부)은 건드리지 않고 넓을 때만 덮어쓴다.
+       - 하단 탭 → 왼쪽 세로 레일
+       - 홈: 지표별 최근값 판(왼쪽) + 저장된 날짜 목록(오른쪽)
+       - 그래프: 왼쪽 지표 목록 + 화면 높이를 채우는 그래프
+       - 설정: 지표 목록 세 단
+       - 창은 아래에서 올라오는 시트 대신 가운데 창
+       이 블록은 스타일 맨 끝에 둔다 */
+    @media (min-width: 900px) and (orientation: landscape) {
+      :root { --rail-w: 92px; --header-h: 60px; }
+
+      #header { left: var(--rail-w); padding: 0 28px; }
+      #header h1 { font-size: 19px; }
+      #btn-sync-open { font-size: 22px; padding: 6px 10px; }
+
+      #main { left: var(--rail-w); bottom: 0; }
+      .tab-content { padding: 20px 28px; }
+      .tab-content.active { display: flex; flex-direction: column; }
+      .tab-content > * { width: 100%; max-width: 1320px; margin-left: auto; margin-right: auto; }
+
+      /* ── 왼쪽 레일 ── */
+      #tabnav {
+        top: 0; bottom: 0; right: auto;
+        width: var(--rail-w); height: 100%;
+        display: flex; flex-direction: column; justify-content: center; gap: 4px;
+        padding-left: env(safe-area-inset-left);
+        border-top: none; border-right: 1px solid var(--border);
+        box-shadow: 2px 0 12px rgba(0,0,0,.05);
+      }
+      .tab-btn { flex: 0 0 auto; padding: 12px 0; font-size: 13px; gap: 5px; }
+      .tab-btn .icon { font-size: 26px; }
+      .tab-btn.active { background: var(--primary-light); }
+
+      .card { padding: 20px; border-radius: 14px; }
+      .card-title { font-size: 13px; margin-bottom: 12px; }
+
+      /* ── 홈: 최근값 판 | 저장된 날짜 ── */
+      #tab-home.active {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 300px;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 0 20px;
+        max-width: none;
+      }
+      #tab-home > * { max-width: none; }
+      #tab-home .home-latest {
+        display: flex; flex-direction: column;
+        grid-column: 1; grid-row: 1 / span 2;
+        margin-bottom: 0; min-height: 0;
+      }
+      .latest-asof { font-weight: 500; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+      .latest-grid {
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-auto-rows: minmax(84px, 1fr);
+        gap: 10px;
+      }
+      .lt-item {
+        display: flex; flex-direction: column; justify-content: center; gap: 4px;
+        padding: 10px 14px; text-align: left;
+        background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+        font-family: inherit; color: var(--text); cursor: pointer;
+      }
+      .lt-item:active { background: var(--primary-light); }
+      .lt-name { font-size: 13px; font-weight: 600; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .lt-val { font-size: 21px; font-weight: 700; }
+      .lt-chg { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+      .lt-chg.up { color: #dc2626; }
+      .lt-chg.down { color: #2563eb; }
+      .lt-date { font-weight: 400; margin-left: 6px; color: var(--text-muted); font-size: 11px; }
+
+      #tab-home .backup-row { grid-column: 2; grid-row: 1; margin-bottom: 12px; }
+      .btn-backup { padding: 13px 8px; font-size: 14px; }
+      #tab-home > .card:not(.home-latest) {
+        grid-column: 2; grid-row: 2;
+        display: flex; flex-direction: column; min-height: 0; margin-bottom: 0;
+      }
+      #entry-list { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; }
+      .entry-item { padding: 12px 16px; }
+      .entry-date { font-size: 15px; }
+      .entry-count { font-size: 13px; }
+
+      /* ── 표: 글자 키우기 (화면 높이는 이미 다 쓴다) ── */
+      #tab-table.active { padding: 0; }
+      #tab-table > * { max-width: none; }
+      .table-wrap { padding: 16px 28px; }
+      table { font-size: 15px; }
+      th, td { padding: 10px 14px; }
+
+      /* ── 그래프: 지표 목록 | 그래프 ── */
+      #tab-graph.active {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+        gap: 20px;
+        max-width: 1320px; margin: 0 auto; width: 100%;
+      }
+      #tab-graph > * { max-width: none; }
+      #tab-graph .select-wrap { display: none; }
+      .ind-picker {
+        display: block;
+        overflow-y: auto; min-height: 0;
+        background: var(--card); border-radius: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.08);
+        padding: 8px 12px 12px;
+      }
+      .picker-title {
+        font-size: 12px; font-weight: 700; color: var(--primary);
+        padding: 8px 4px 5px; border-bottom: 2px solid var(--primary-light); margin-bottom: 2px;
+      }
+      .picker-group { display: flex; flex-wrap: wrap; gap: 6px; }
+      .picker-group .picker-title { flex: 0 0 100%; }
+      .picker-btn {
+        flex: 1 1 auto;
+        padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+        background: var(--bg); color: var(--text);
+        font-family: inherit; font-size: 14px; font-weight: 500; cursor: pointer;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .picker-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 700; }
+      #chart-area { display: flex; flex-direction: column; min-height: 0; }
+      .chart-card { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 20px 24px; border-radius: 14px; }
+      .latest-num { font-size: 34px; }
+      .latest-label { font-size: 15px; }
+      .peak-row { padding: 9px 14px; }
+      .peak-label, .peak-date { font-size: 13px; }
+      .peak-val { font-size: 17px; }
+      .peak-diff { font-size: 14px; }
+      .chart-canvas-wrap { flex: 1; position: relative; height: auto; min-height: 240px; }
+      .chart-canvas-wrap canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
+      #btn-reset-zoom { font-size: 13px; padding: 7px 16px; }
+      .chart-hint { font-size: 12px; }
+      .no-chart { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--card); border-radius: 14px; }
+
+      /* ── 설정: 지표 목록 세 단 (위→아래로 읽고 옆 단으로), 남는 높이를 나눠 갖는다 ── */
+      #tab-settings > .card { flex: 1; display: flex; flex-direction: column; margin-bottom: 0; }
+      .settings-info { font-size: 14px; }
+      .btn-settings-add { max-width: 420px; padding: 13px; font-size: 15px; }
+      #settings-indicator-list {
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-rows: repeat(var(--rows, 8), minmax(48px, 1fr));
+        grid-auto-flow: column;
+        gap: 8px 16px;
+      }
+      .settings-row { margin-bottom: 0; padding: 7px 12px; }
+      .settings-row .ind-name { font-size: 15px; }
+      .settings-row .btn-move, .settings-row .btn-del { width: 38px; height: 36px; font-size: 15px; }
+      .btn-settings-reset { max-width: 420px; margin-left: auto; margin-right: auto; display: block; }
+
+      /* ── 창: 가운데 ── */
+      .modal-backdrop { align-items: center; padding-left: var(--rail-w); }
+      .modal { max-width: 560px; border-radius: 24px; padding: 24px 24px 28px; animation: fadeIn .2s ease; }
+      .modal-title { font-size: 20px; }
+      .modal-close { width: 36px; height: 36px; }
+      #sync-key-input {
+        width: 100%; padding: 11px 12px;
+        border: 1px solid var(--border); border-radius: 8px;
+        font-size: 16px; background: var(--bg); color: var(--text);
+      }
+      .sync-btn-row { grid-template-columns: 1fr; }
+      .btn-sync-down { padding: 14px 8px; font-size: 15px; }
+
+      #toast { bottom: 32px; left: calc(50% + var(--rail-w) / 2); }
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+    /* 태블릿을 세로로 세웠을 때 — 폰 배치 그대로, 폭만 넓힌다 */
+    @media (min-width: 700px) and (orientation: portrait) {
+      .tab-content > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+    }
   </style>
 </head>
 <body>
@@ -388,6 +564,8 @@
     <!-- 2026-09-03: 앱은 읽기 전용이다. 직접 입력·복원·삭제 버튼을 뺐다.
          기록은 GitHub Actions(collect.js)만 쓰고, 앱은 클라우드에서 받기만 한다.
          값을 고칠 일이 있으면 Actions의 --only 실행이나 Claude가 클라우드 문서를 그 날짜만 고친다. -->
+    <!-- 태블릿 가로 전용 (2026-09-28): 지표별 최근값 판. 폰에서는 CSS로 숨긴다 -->
+    <div class="card home-latest" id="home-latest"></div>
     <div class="backup-row">
       <button class="btn-backup" id="btn-backup">💾 백업 (내보내기)</button>
     </div>
@@ -411,6 +589,8 @@
 
   <!-- GRAPH TAB -->
   <div id="tab-graph" class="tab-content">
+    <!-- 태블릿 가로 전용 (2026-09-28): 드롭다운 대신 왼쪽 지표 목록. 폰에서는 CSS로 숨긴다 -->
+    <div class="ind-picker" id="ind-picker"></div>
     <div class="select-wrap">
       <label>지표</label>
       <select id="indicator-select">
@@ -712,6 +892,7 @@ function renderHome() {
   const data = loadData();
   const dates = Object.keys(data).sort((a, b) => b.localeCompare(a));
   const list = document.getElementById('entry-list');
+  renderLatest(data, dates);
   if (dates.length === 0) {
     list.innerHTML = `<div class="empty-state"><div class="big">📈</div><p>아직 데이터가 없습니다.<br>☁️에서 동기화 키로 클라우드 데이터를 받아오세요.</p></div>`;
     return;
@@ -724,6 +905,95 @@ function renderHome() {
     </div>`;
   }).join('');
 }
+
+// ── 태블릿 가로 (2026-09-28) ─────────────────────────────────────────
+// 폰 배치는 그대로 두고, 넓은 가로 화면에서만 쓰는 판(최근값 판·그래프 지표 목록)을 채운다.
+const TABLET_MQ = window.matchMedia('(min-width: 900px) and (orientation: landscape)');
+function isTablet() { return TABLET_MQ.matches; }
+// 돌리면 그래프 글자 크기·첫 지표 자동 선택을 다시 맞춘다
+TABLET_MQ.addEventListener?.('change', () => { if (getActiveTab() === 'graph') renderIndicatorSelect(); });
+
+// 금리 4종·금 할인률은 %p, 나머지는 변화율 %
+function isPointIndicator(name) {
+  const ind = getIndicators().find(i => i.name === name);
+  return (ind && ind.group === '금리') || name === '금 할인률';
+}
+
+// 홈: 지표마다 가장 최근 값과 그 직전 값 대비 변화
+function renderLatest(data, datesDesc) {
+  const box = document.getElementById('home-latest');
+  if (!box) return;
+  if (!datesDesc.length) { box.innerHTML = ''; return; }
+  const inds = getIndicators();
+  let html = `<div class="card-title">최근값 <span class="latest-asof">${formatDate(datesDesc[0])} 기준</span></div><div class="latest-grid">`;
+  inds.forEach(ind => {
+    let cur = null, curDate = null, prev = null;
+    for (const d of datesDesc) {
+      const raw = data[d][ind.name];
+      if (raw === undefined || raw === null) continue;
+      const v = parseFloat(raw);
+      if (isNaN(v) || isChartOutlier(ind.name, v)) continue;
+      if (cur === null) { cur = v; curDate = d; } else { prev = v; break; }
+    }
+    let chg = '', cls = '';
+    if (cur !== null && prev !== null) {
+      if (isPointIndicator(ind.name)) {
+        const diff = cur - prev;
+        chg = `${diff > 0 ? '+' : ''}${diff.toFixed(2)}%p`;
+        cls = diff > 0 ? 'up' : diff < 0 ? 'down' : '';
+      } else if (prev !== 0) {
+        const pct = (cur - prev) / prev * 100;
+        chg = `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`;
+        cls = pct > 0 ? 'up' : pct < 0 ? 'down' : '';
+      }
+    }
+    const stale = curDate && curDate !== datesDesc[0] ? `<span class="lt-date">${formatDate(curDate)}</span>` : '';
+    html += `<button class="lt-item" data-name="${escapeHtml(ind.name)}">
+      <span class="lt-name">${GROUP_EMOJI[ind.group] || '📌'} ${escapeHtml(ind.name)}</span>
+      <span class="lt-val">${cur !== null ? formatNum(cur) : '-'}</span>
+      <span class="lt-chg ${cls}">${chg || '&nbsp;'}${stale}</span>
+    </button>`;
+  });
+  box.innerHTML = html + '</div>';
+}
+
+// 최근값 칸을 누르면 그 지표 그래프로
+document.getElementById('home-latest').addEventListener('click', e => {
+  const btn = e.target.closest('.lt-item');
+  if (!btn) return;
+  switchTab('graph');
+  const sel = document.getElementById('indicator-select');
+  sel.value = btn.dataset.name;
+  if (sel.value) { renderChart(sel.value); markPicker(sel.value); }
+});
+
+// 그래프: 왼쪽 지표 목록 (그룹별)
+function renderPicker(names) {
+  const box = document.getElementById('ind-picker');
+  if (!box) return;
+  const inds = getIndicators();
+  const groups = {};
+  names.forEach(n => {
+    const g = (inds.find(i => i.name === n) || {}).group || '기타';
+    (groups[g] = groups[g] || []).push(n);
+  });
+  box.innerHTML = Object.entries(groups).map(([g, list]) =>
+    `<div class="picker-group"><div class="picker-title">${GROUP_EMOJI[g] || '📌'} ${escapeHtml(g)}</div>` +
+    list.map(n => `<button class="picker-btn" data-name="${escapeHtml(n)}">${escapeHtml(n)}</button>`).join('') +
+    `</div>`).join('');
+  markPicker(document.getElementById('indicator-select').value);
+}
+function markPicker(name) {
+  document.querySelectorAll('#ind-picker .picker-btn').forEach(b => b.classList.toggle('active', b.dataset.name === name));
+}
+document.getElementById('ind-picker').addEventListener('click', e => {
+  const btn = e.target.closest('.picker-btn');
+  if (!btn) return;
+  const sel = document.getElementById('indicator-select');
+  sel.value = btn.dataset.name;
+  renderChart(btn.dataset.name);
+  markPicker(btn.dataset.name);
+});
 
 // MM-DD, YY 형식 (예: 03-24, 26)
 function formatDate(d) {
@@ -808,10 +1078,14 @@ function renderIndicatorSelect() {
     if (name === current) opt.selected = true;
     sel.appendChild(opt);
   });
+  renderPicker(allNames);
   if (current && allSet.has(current)) renderChart(current);
+  // 태블릿 가로에서는 빈 그래프 화면 대신 첫 지표를 바로 보여준다
+  else if (isTablet() && allNames.length) { sel.value = allNames[0]; renderChart(allNames[0]); markPicker(allNames[0]); }
 }
 
 document.getElementById('indicator-select').addEventListener('change', e => {
+  markPicker(e.target.value);
   if (e.target.value) renderChart(e.target.value);
   else document.getElementById('chart-area').innerHTML = '<div class="no-chart">지표를 선택하면 그래프가 표시됩니다.</div>';
 });
@@ -864,6 +1138,7 @@ function renderChart(name) {
 
   if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
 
+  const tickSize = isTablet() ? 13 : 11;   // 태블릿 가로: 팔 길이에서 보이게 조금 키운다
   chartInstance = new Chart(document.getElementById('my-chart').getContext('2d'), {
     type: 'line',
     data: {
@@ -884,8 +1159,8 @@ function renderChart(name) {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       scales: {
-        x: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: 11 }, maxRotation: 45, maxTicksLimit: 12 } },
-        y: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: 11 }, callback: v => formatNum(v) } }
+        x: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: tickSize }, maxRotation: 45, maxTicksLimit: 12 } },
+        y: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: tickSize }, callback: v => formatNum(v) } }
       },
       plugins: {
         legend: { display: false },
@@ -1157,6 +1432,7 @@ function renderSettingsTab() {
   });
 
   container.innerHTML = html;
+  container.style.setProperty('--rows', Math.ceil(list.length / 3));  // 태블릿 가로 세 단(위→아래) 줄 수
 
   // 드래그앤드롭 초기화 (모바일/PC 모두 지원)
   if (sortableInstance) { sortableInstance.destroy(); sortableInstance = null; }

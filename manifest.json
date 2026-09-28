@@ -4,7 +4,7 @@
   "description": "네이버 금융 지표 수기 입력 및 추이 분석",
   "start_url": "./index.html",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "any",
   "background_color": "#f1f5f9",
   "theme_color": "#1d4ed8",
   "icons": [
