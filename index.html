@@ -10,9 +10,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="투자 트래커">
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <!-- Firebase는 첫 화면을 그린 뒤에 불러온다 (loadFirebase, 2026-09-29). auth는 받기 전용이 된 뒤로 안 쓴다 -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
@@ -1602,6 +1600,26 @@ let lastUploadTime = 0;
 let auth = null;
 let currentUser = null;
 
+// 첫 화면은 기기에 저장된 기록으로 먼저 그리고, Firebase는 그 뒤에 불러온다 (2026-09-29 —
+// "처음 들어갈 때 동기화가 느리다"). head에 있을 땐 SDK 셋을 다 받을 때까지 화면이 비어 있었다
+const FIREBASE_SDK = [
+  'https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js',
+];
+function loadScript(src) {
+  return new Promise((ok, fail) => {
+    const el = document.createElement('script');
+    el.src = src; el.onload = ok; el.onerror = fail;
+    document.head.appendChild(el);
+  });
+}
+async function loadFirebase() {
+  try {
+    for (const src of FIREBASE_SDK) await loadScript(src);
+    initFirebase();
+  } catch(e) { setSyncStatus('offline'); }
+}
+
 function initFirebase() {
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
@@ -1635,13 +1653,16 @@ function startSync(key) {
     }
     try {
       const parsed = JSON.parse(snap.data().payload);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+      const raw = JSON.stringify(parsed);
+      // 기록은 하루 한 번 바뀐다. 기기에 있는 것과 같으면 다시 저장·다시 그리기를 건너뛴다
+      if (raw === localStorage.getItem(STORAGE_KEY)) { setSyncStatus('connected'); return; }
+      localStorage.setItem(STORAGE_KEY, raw);
       renderHome();
       const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
       if (activeTab === 'table') renderTable();
       if (activeTab === 'graph') renderIndicatorSelect();
       setSyncStatus('connected');
-      showToast('☁️ 동기화 완료');
+      showToast('☁️ 새 기록을 받았습니다');
     } catch(e) { setSyncStatus('offline'); }
   }, () => setSyncStatus('offline'));
 }
@@ -1725,7 +1746,7 @@ initData();
 migrateGoldRecalc(); // 트로이온스 공식으로 과거 데이터 일괄 재계산
 renderEntryFields(); // 입력 모달의 동적 필드 미리 생성
 renderHome();
-initFirebase();
+setTimeout(loadFirebase, 0); // 첫 화면이 그려진 뒤에
 
 // 서비스워커 등록 (오프라인 지원)
 if ('serviceWorker' in navigator) {
