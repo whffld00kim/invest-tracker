@@ -386,7 +386,7 @@ html, body { overscroll-behavior-y: none; }
     /* ============ 태블릿 (2026-09-28) ============
        갤럭시 탭을 가로로 두고 쓸 때. 폰 화면(위 규칙 전부)은 건드리지 않고 넓을 때만 덮어쓴다.
        - 하단 탭 → 왼쪽 세로 레일
-       - 홈: 지표별 최근값 판(왼쪽) + 저장된 날짜 목록(오른쪽)
+       - 데이터 탭(10/12까지 홈): 지표별 최근값 판(왼쪽) + 저장된 날짜 목록(오른쪽)
        - 그래프: 왼쪽 지표 목록 + 화면 높이를 채우는 그래프
        - 설정: 지표 목록 세 단
        - 창은 아래에서 올라오는 시트 대신 가운데 창
@@ -419,8 +419,8 @@ html, body { overscroll-behavior-y: none; }
       .card { padding: 20px; border-radius: 14px; }
       .card-title { font-size: 13px; margin-bottom: 12px; }
 
-      /* ── 홈: 최근값 판 | 저장된 날짜 ── */
-      #tab-home.active {
+      /* ── 데이터 탭: 최근값 판 | 저장된 날짜 ── */
+      #tab-data.active {
         display: grid;
         grid-template-columns: minmax(0, 1fr) 300px;
         grid-template-rows: auto minmax(0, 1fr);
@@ -429,8 +429,8 @@ html, body { overscroll-behavior-y: none; }
         /* 한 화면에 다 들어오게 높이를 화면에 고정하고, 칸들이 그 안에서 줄어든다 (2026-09-28 탭에서 마지막 줄이 잘림) */
         height: 100%; box-sizing: border-box;
       }
-      #tab-home > * { max-width: none; }
-      #tab-home .home-latest {
+      #tab-data > * { max-width: none; }
+      #tab-data .home-latest {
         display: flex; flex-direction: column;
         grid-column: 1; grid-row: 1 / span 2;
         margin-bottom: 0; min-height: 0;
@@ -459,9 +459,9 @@ html, body { overscroll-behavior-y: none; }
       .lt-chg.down { color: #2563eb; }
       .lt-date { font-weight: 400; margin-left: 6px; color: var(--text-muted); font-size: 11px; }
 
-      #tab-home .backup-row { grid-column: 2; grid-row: 1; margin-bottom: 12px; }
+      #tab-data .backup-row { grid-column: 2; grid-row: 1; margin-bottom: 12px; }
       .btn-backup { padding: 13px 8px; font-size: 14px; }
-      #tab-home > .card:not(.home-latest) {
+      #tab-data > .card:not(.home-latest) {
         grid-column: 2; grid-row: 2;
         display: flex; flex-direction: column; min-height: 0; margin-bottom: 0;
       }
@@ -573,8 +573,8 @@ html, body { overscroll-behavior-y: none; }
 <!-- MAIN -->
 <div id="main">
 
-  <!-- HOME TAB -->
-  <div id="tab-home" class="tab-content active">
+  <!-- DATA TAB (2026-10-12까지 홈 탭 — 첫 화면을 표로 바꾸며 이름을 바꿈) -->
+  <div id="tab-data" class="tab-content">
     <!-- 2026-09-03: 앱은 읽기 전용이다. 직접 입력·복원·삭제 버튼을 뺐다.
          기록은 GitHub Actions(collect.js)만 쓰고, 앱은 클라우드에서 받기만 한다.
          값을 고칠 일이 있으면 Actions의 --only 실행이나 Claude가 클라우드 문서를 그 날짜만 고친다. -->
@@ -595,9 +595,9 @@ html, body { overscroll-behavior-y: none; }
   </div>
 
   <!-- TABLE TAB -->
-  <div id="tab-table" class="tab-content">
+  <div id="tab-table" class="tab-content active">
     <div class="table-wrap" id="table-wrap">
-      <div class="no-data">데이터가 없습니다.<br>홈에서 데이터를 추가하세요.</div>
+      <div class="no-data">데이터가 없습니다.<br>☁️에서 클라우드 데이터를 받아오세요.</div>
     </div>
   </div>
 
@@ -631,8 +631,8 @@ html, body { overscroll-behavior-y: none; }
 
 <!-- BOTTOM TAB NAV -->
 <nav id="tabnav">
-  <button class="tab-btn active" data-tab="home"><span class="icon">🏠</span>홈</button>
-  <button class="tab-btn" data-tab="table"><span class="icon">📋</span>표</button>
+  <button class="tab-btn active" data-tab="table"><span class="icon">📋</span>표</button>
+  <button class="tab-btn" data-tab="data"><span class="icon">🗂️</span>데이터</button>
   <button class="tab-btn" data-tab="graph"><span class="icon">📈</span>그래프</button>
   <button class="tab-btn" data-tab="settings"><span class="icon">⚙️</span>설정</button>
 </nav>
@@ -858,10 +858,10 @@ function showToast(msg, dur = 2500) {
 }
 
 // ── TABS ──────────────────────────────────────────────────────────────
-const TAB_ORDER = ['home', 'table', 'graph', 'settings'];
+const TAB_ORDER = ['table', 'data', 'graph', 'settings'];   // 2026-10-12: 첫 화면이 표, 옛 홈은 데이터 탭
 
 function getActiveTab() {
-  return document.querySelector('.tab-btn.active')?.dataset.tab || 'home';
+  return document.querySelector('.tab-btn.active')?.dataset.tab || 'table';
 }
 
 function switchTab(tab, swipeDir) {
@@ -945,7 +945,7 @@ function isPointIndicator(name) {
   return (ind && ind.group === '금리') || name === '금 할인률';
 }
 
-// 홈: 지표마다 가장 최근 값과 그 직전 값 대비 변화
+// 데이터 탭: 지표마다 가장 최근 값과 그 직전 값 대비 변화
 function renderLatest(data, datesDesc) {
   const box = document.getElementById('home-latest');
   if (!box) return;
@@ -1046,15 +1046,16 @@ function deleteEntry(date) {
 let _tableKey = '';
 // 표에서 변화 줄을 달지 않는 지표 (2026-10-12 사용자 요청 — 계산값이라 숫자만 본다)
 const NO_CHANGE_ROW = new Set(['금 환산', '금 할인률']);
-function renderTable() {
+// limit: 최근 N일만 먼저 그린다 — 첫 화면이 표라 900일 × 23칸을 다 만들 때까지 기다리지 않게 (2026-10-12)
+function renderTable(limit) {
   const data = loadData();
-  const key = _dataVer + '|' + getFieldOrder().join(',');
+  const key = _dataVer + '|' + getFieldOrder().join(',') + '|' + (limit || 'all');
   if (key === _tableKey && document.querySelector('#table-wrap table')) return;
   _tableKey = key;
   const dates = Object.keys(data).sort((a, b) => b.localeCompare(a)); // 최신 날짜 왼쪽, 오래된 날짜 오른쪽
   const wrap = document.getElementById('table-wrap');
   if (dates.length === 0) {
-    wrap.innerHTML = '<div class="no-data">데이터가 없습니다.<br>홈에서 데이터를 추가하세요.</div>';
+    wrap.innerHTML = '<div class="no-data">데이터가 없습니다.<br>☁️에서 클라우드 데이터를 받아오세요.</div>';
     return;
   }
 
@@ -1067,7 +1068,8 @@ function renderTable() {
   const allIndicators = [...ordered, ...extras];
 
   let html = '<table><thead><tr><th>지표</th>';
-  dates.forEach(d => { html += `<th>${formatDateShort(d)}</th>`; });
+  const shown = limit ? dates.slice(0, limit) : dates;
+  shown.forEach(d => { html += `<th>${formatDateShort(d)}</th>`; });
   html += '</tr></thead><tbody>';
   allIndicators.forEach(name => {
     // 오래된 날부터 훑으며 칸마다 직전 기록값 대비 변화를 만든다 (빈 날·이상값은 건너뛴다)
@@ -1083,11 +1085,12 @@ function renderTable() {
       prev = v;
     }
     html += `<tr><td>${name}</td>`;
-    dates.forEach(d => { html += `<td>${data[d][name] !== undefined ? formatNum(data[d][name]) : '-'}${chg[d] || ''}</td>`; });
+    shown.forEach(d => { html += `<td>${data[d][name] !== undefined ? formatNum(data[d][name]) : '-'}${chg[d] || ''}</td>`; });
     html += '</tr>';
   });
   html += '</tbody></table>';
   wrap.innerHTML = html;
+  if (limit && dates.length > limit) setTimeout(() => { if (_tableKey === key) renderTable(); }, 400);
 }
 
 const _NF = [
@@ -1781,6 +1784,7 @@ initData();
 migrateGoldRecalc(); // 트로이온스 공식으로 과거 데이터 일괄 재계산
 renderEntryFields(); // 입력 모달의 동적 필드 미리 생성
 renderHome();
+renderTable(40); // 첫 화면이 표 — 최근 40일 먼저, 나머지는 곧이어 (2026-10-12)
 setTimeout(loadFirebase, 0); // 첫 화면이 그려진 뒤에
 
 // 서비스워커 등록 (오프라인 지원)

@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v21';   // v21: 표의 금 환산·금 할인률은 변화 줄 없이 (2026-10-12)
+const CACHE = 'invest-tracker-v22';   // v22: 첫 화면을 표로, 옛 홈은 「데이터」 탭(표 오른쪽) (2026-10-12)
 const ASSETS = [
   './',
   './index.html',
