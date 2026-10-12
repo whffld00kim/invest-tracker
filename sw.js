@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v19';   // v18: 저장된 사본으로 먼저 열고 뒤에서 새 파일을 받는다 (2026-09-29)
+const CACHE = 'invest-tracker-v20';   // v20: 표 칸 아래에 직전 기록일 대비 차이·변화율 (2026-10-12)
 const ASSETS = [
   './',
   './index.html',

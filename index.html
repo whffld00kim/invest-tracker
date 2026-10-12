@@ -144,6 +144,10 @@ html, body { overscroll-behavior-y: none; }
     td:first-child { position: sticky; left: 0; background: #f8fafc; font-weight: 500; text-align: left; z-index: 1; }
     tr:hover td { background: var(--primary-light); }
     tr:hover td:first-child { background: var(--primary-light); }
+    /* 칸 아래 줄: 직전 기록일 대비 차이 (변화율) — 오르면 빨강, 내리면 파랑 (2026-10-12) */
+    td .chg { display: block; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    td .chg.up { color: #dc2626; }
+    td .chg.down { color: #2563eb; }
     .no-data { text-align: center; padding: 60px 24px; color: var(--text-muted); }
 
     /* ── GRAPH TAB ── */
@@ -1064,8 +1068,20 @@ function renderTable() {
   dates.forEach(d => { html += `<th>${formatDateShort(d)}</th>`; });
   html += '</tr></thead><tbody>';
   allIndicators.forEach(name => {
+    // 오래된 날부터 훑으며 칸마다 직전 기록값 대비 변화를 만든다 (빈 날·이상값은 건너뛴다)
+    const point = isPointIndicator(name);
+    const chg = {};
+    let prev = null;
+    for (let i = dates.length - 1; i >= 0; i--) {
+      const raw = data[dates[i]][name];
+      if (raw === undefined || raw === null || raw === '') continue;
+      const v = parseFloat(raw);
+      if (isNaN(v) || isChartOutlier(name, v)) continue;
+      if (prev !== null) chg[dates[i]] = formatChange(v, prev, point);
+      prev = v;
+    }
     html += `<tr><td>${name}</td>`;
-    dates.forEach(d => { html += `<td>${data[d][name] !== undefined ? formatNum(data[d][name]) : '-'}</td>`; });
+    dates.forEach(d => { html += `<td>${data[d][name] !== undefined ? formatNum(data[d][name]) : '-'}${chg[d] || ''}</td>`; });
     html += '</tr>';
   });
   html += '</tbody></table>';
@@ -1086,6 +1102,23 @@ function formatNum(n) {
   if (num >= 1000)   return _NF[1].format(num);
   if (num >= 10)     return _NF[2].format(num);
   return _NF[3].format(num);
+}
+
+// 표 칸 아래 줄: "-42.65 (4.78%)" 꼴. 금리·금 할인률은 차이만 %p로 (변화율은 오해를 부른다)
+function formatChange(cur, prev, point) {
+  const diff = cur - prev;
+  const cls = diff > 0 ? 'up' : diff < 0 ? 'down' : '';
+  const sign = diff > 0 ? '+' : diff < 0 ? '-' : '';
+  let text;
+  if (point) {
+    text = `${sign}${Math.abs(diff).toFixed(2)}%p`;
+  } else {
+    const a = Math.abs(cur);
+    const nf = a >= 100000 ? _NF[0] : a >= 10 ? _NF[2] : _NF[3];
+    text = `${sign}${nf.format(Math.abs(diff))}`;
+    if (prev !== 0) text += ` (${Math.abs(diff / prev * 100).toFixed(2)}%)`;
+  }
+  return `<span class="chg ${cls}">${text}</span>`;
 }
 
 // ── GRAPH ──────────────────────────────────────────────────────────────
