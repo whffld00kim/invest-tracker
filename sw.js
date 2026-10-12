@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v20';   // v20: 표 칸 아래에 직전 기록일 대비 차이·변화율 (2026-10-12)
+const CACHE = 'invest-tracker-v21';   // v21: 표의 금 환산·금 할인률은 변화 줄 없이 (2026-10-12)
 const ASSETS = [
   './',
   './index.html',
