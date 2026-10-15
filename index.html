@@ -1623,6 +1623,10 @@ const FIREBASE_CONFIG = {
   appId: "1:978474851175:web:df0f7306a9ab7f77382dc2"
 };
 const SYNC_KEY_STORAGE = 'invest_sync_key';
+// 키가 없는 기기는 매일 자동 수집이 쓰는 문서(sync/0000)에 바로 붙는다 (2026-10-15 — 새 주소로 옮긴 태블릿이 키가 없어 8월 기본 데이터에 멈춤).
+// 시세만 담긴 받기 전용 문서라 키를 숨길 이유가 없다. ☁️에서 「연결 끊기」를 누른 기기는 OFF 표시를 남겨 다시 붙지 않는다
+const DEFAULT_SYNC_KEY = '0000';
+const SYNC_OFF_STORAGE = 'invest_sync_off';
 let db = null;
 let syncUnsubscribe = null;
 let lastUploadTime = 0;
@@ -1663,7 +1667,7 @@ function initFirebase() {
     firebase.initializeApp(FIREBASE_CONFIG);
     db = firebase.firestore();
 
-    const savedKey = localStorage.getItem(SYNC_KEY_STORAGE);
+    const savedKey = localStorage.getItem(SYNC_KEY_STORAGE) || (localStorage.getItem(SYNC_OFF_STORAGE) ? '' : DEFAULT_SYNC_KEY);
     if (savedKey) {
       document.getElementById('sync-key-input').value = savedKey;
       startSync(savedKey);
@@ -1677,6 +1681,7 @@ function startSync(key) {
   if (!db || !key.trim()) return;
   if (syncUnsubscribe) syncUnsubscribe();
   localStorage.setItem(SYNC_KEY_STORAGE, key.trim());
+  localStorage.removeItem(SYNC_OFF_STORAGE);
   setSyncStatus('syncing');
 
   syncUnsubscribe = db.collection('sync').doc(key.trim()).onSnapshot(snap => {
@@ -1710,6 +1715,7 @@ function startSync(key) {
 function stopSync() {
   if (syncUnsubscribe) { syncUnsubscribe(); syncUnsubscribe = null; }
   localStorage.removeItem(SYNC_KEY_STORAGE);
+  localStorage.setItem(SYNC_OFF_STORAGE, '1');
   setSyncStatus('disconnected');
 }
 

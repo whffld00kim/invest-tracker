@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v24';   // v24: 표에서 삼성우비율도 변화 줄 없이 숫자만 (2026-10-15)
+const CACHE = 'invest-tracker-v25';   // v25: 키 없는 기기는 sync/0000 에 자동 연결 (2026-10-15)
 const ASSETS = [
   './',
   './index.html',
