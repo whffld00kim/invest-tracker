@@ -1712,6 +1712,22 @@ function startSync(key) {
 
 // (uploadToFirebase는 2026-09-03에 삭제 — 위 주석 참고)
 
+// 앱이 다시 화면에 나타나면 구독을 새로 건다 (2026-10-15 — 사용자: 매일 아침 열면 「동기화됨」인데 어제 표 그대로, 껐다 켜야 보였다).
+// 폰은 백그라운드에 둔 앱의 연결을 끊는데, 다시 띄울 때 SDK가 새 기록을 바로 다시 받아 오지 않는 일이 있었다.
+// 30초 넘게 가려져 있었거나 네트워크가 돌아오면 끊고 다시 구독한다 — 서버의 최신 문서가 새로 와서 표가 다시 그려진다
+let _hiddenAt = 0;
+function resubscribe() {
+  const k = localStorage.getItem(SYNC_KEY_STORAGE);
+  if (db && k) startSync(k);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { _hiddenAt = Date.now(); return; }
+  if (_hiddenAt && Date.now() - _hiddenAt > 30000) resubscribe();
+  _hiddenAt = 0;
+});
+window.addEventListener('pageshow', e => { if (e.persisted) resubscribe(); });   // 뒤로 가기 캐시에서 되살아난 경우
+window.addEventListener('online', resubscribe);
+
 function stopSync() {
   if (syncUnsubscribe) { syncUnsubscribe(); syncUnsubscribe = null; }
   localStorage.removeItem(SYNC_KEY_STORAGE);

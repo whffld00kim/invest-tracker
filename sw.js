@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v25';   // v25: 키 없는 기기는 sync/0000 에 자동 연결 (2026-10-15)
+const CACHE = 'invest-tracker-v26';   // v26: 앱이 다시 보이면 구독을 새로 건다 (2026-10-15)
 const ASSETS = [
   './',
   './index.html',
