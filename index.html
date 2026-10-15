@@ -1045,7 +1045,7 @@ function deleteEntry(date) {
 // ── TABLE ──────────────────────────────────────────────────────────────
 let _tableKey = '';
 // 표에서 변화 줄을 달지 않는 지표 (2026-10-12 사용자 요청 — 계산값이라 숫자만 본다)
-const NO_CHANGE_ROW = new Set(['금 환산', '금 할인률']);
+const NO_CHANGE_ROW = new Set(['금 환산', '금 할인률', '삼성우비율']); // 삼성우비율 2026-10-15 추가
 // limit: 최근 N일만 먼저 그린다 — 첫 화면이 표라 900일 × 23칸을 다 만들 때까지 기다리지 않게 (2026-10-12)
 function renderTable(limit) {
   const data = loadData();

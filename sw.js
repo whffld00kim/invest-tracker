@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v23';   // v23: 전용 주소 minsung-invest.web.app 로 이전 + 옛 주소에 이동 띠 (2026-10-15)
+const CACHE = 'invest-tracker-v24';   // v24: 표에서 삼성우비율도 변화 줄 없이 숫자만 (2026-10-15)
 const ASSETS = [
   './',
   './index.html',
