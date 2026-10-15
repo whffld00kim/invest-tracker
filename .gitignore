@@ -12,3 +12,6 @@ npm-debug.log*
 # OS·에디터
 .DS_Store
 Thumbs.db
+
+# Firebase Hosting 배포 임시 파일
+.firebase/

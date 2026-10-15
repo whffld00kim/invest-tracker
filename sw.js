@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v22';   // v22: 첫 화면을 표로, 옛 홈은 「데이터」 탭(표 오른쪽) (2026-10-12)
+const CACHE = 'invest-tracker-v23';   // v23: 전용 주소 minsung-invest.web.app 로 이전 + 옛 주소에 이동 띠 (2026-10-15)
 const ASSETS = [
   './',
   './index.html',

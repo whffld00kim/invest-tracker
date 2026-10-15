@@ -1779,6 +1779,40 @@ function migrateGoldRecalc() {
   if (changed > 0) setTimeout(() => showToast(`💰 금 환산 ${changed}개 날짜 재계산 완료`), 600);
 }
 
+// ── 주소 이전 (2026-10-15) ───────────────────────────────────────────
+// github.io 공용 주소(여러 웹앱이 보관함·설치 판정을 나눠 씀) → 전용 주소 https://minsung-invest.web.app
+// 동기화 키·지표 목록·지운 지표는 기기 localStorage 에만 있어 주소가 바뀌면 따라오지 않는다.
+// 옛 주소 맨 위 「새 주소로 이동」이 그 셋을 #move=… 에 담아 넘기고, 새 주소가 한 번 받아 저장한다(이미 있는 값은 안 덮음).
+// # 뒤는 서버로 가지 않는다. 받은 뒤엔 주소창에서 지운다
+const NEW_ORIGIN = 'https://minsung-invest.web.app/';
+const MOVE_KEYS = [SYNC_KEY_STORAGE, INDICATORS_STORAGE, REMOVED_STORAGE];
+function b64urlEncode(s) { return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function b64urlDecode(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return decodeURIComponent(escape(atob(s))); }
+function importMovedSettings() {
+  const m = /^#move=([A-Za-z0-9_-]+)$/.exec(location.hash || '');
+  if (!m) return;
+  let n = 0;
+  try {
+    const data = JSON.parse(b64urlDecode(m[1]));
+    MOVE_KEYS.forEach(k => { if (typeof data[k] === 'string' && localStorage.getItem(k) === null) { localStorage.setItem(k, data[k]); n++; } });
+  } catch (e) {}
+  history.replaceState(null, '', location.pathname + location.search);
+  if (n) setTimeout(() => showToast('옛 주소의 설정(동기화 키·지표 목록)을 가져왔습니다'), 800);
+}
+function showMoveBanner() {
+  if (!/(^|\.)github\.io$/.test(location.hostname)) return;
+  const bar = document.createElement('div');
+  bar.style.cssText = 'position:sticky;top:0;z-index:2000;background:#1d4ed8;color:#fff;padding:10px 12px;text-align:center;font-size:14px;line-height:1.5';
+  bar.innerHTML = '투자 트래커가 새 주소로 옮겼습니다 <button type="button" style="margin-left:8px;padding:4px 12px;border:0;border-radius:6px;background:#fff;color:#1d4ed8;font-weight:700;font-size:14px">새 주소로 이동</button>';
+  bar.querySelector('button').onclick = () => {
+    const data = {};
+    MOVE_KEYS.forEach(k => { const v = localStorage.getItem(k); if (v !== null) data[k] = v; });
+    location.href = NEW_ORIGIN + '#move=' + b64urlEncode(JSON.stringify(data));
+  };
+  document.body.prepend(bar);
+}
+importMovedSettings(); // 아래 initData·지표·동기화가 localStorage 를 읽기 전에
+
 // ── INIT ──────────────────────────────────────────────────────────────
 initData();
 migrateGoldRecalc(); // 트로이온스 공식으로 과거 데이터 일괄 재계산
@@ -1786,6 +1820,7 @@ renderEntryFields(); // 입력 모달의 동적 필드 미리 생성
 renderHome();
 renderTable(40); // 첫 화면이 표 — 최근 40일 먼저, 나머지는 곧이어 (2026-10-12)
 setTimeout(loadFirebase, 0); // 첫 화면이 그려진 뒤에
+showMoveBanner();
 
 // 서비스워커 등록 (오프라인 지원)
 if ('serviceWorker' in navigator) {
