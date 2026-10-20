@@ -51,9 +51,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      # 태그(v5)는 옮겨 붙일 수 있어 커밋 SHA로 고정한다. 이 잡은 규칙을 우회하는 서비스 계정 키를
+      # 받으므로, 액션이 변조되면 그 키가 새어 3년치를 지울 수 있다 (2026-10-20 클라우드 점검 #10)
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '22'
 

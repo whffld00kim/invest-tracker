@@ -927,7 +927,7 @@ function renderHome() {
   list.innerHTML = dates.map(d => {
     const count = Object.keys(data[d]).length;
     return `<div class="entry-item">
-      <div><div class="entry-date">${formatDate(d)}</div><div class="entry-count">지표 ${count}개</div></div>
+      <div><div class="entry-date">${escapeHtml(formatDate(d))}</div><div class="entry-count">지표 ${count}개</div></div>
     </div>`;
   }).join('');
 }
@@ -943,6 +943,10 @@ TABLET_MQ.addEventListener?.('change', () => { if (getActiveTab() === 'graph') r
 function isPointIndicator(name) {
   const ind = getIndicators().find(i => i.name === name);
   return (ind && ind.group === '금리') || name === '금 할인률';
+}
+// %p 지표의 변화 소수 자릿수 — 금리는 3자리로 기록되고 금 할인률은 2자리 (그 밖은 0 = %p 아님)
+function pointDigits(name) {
+  return !isPointIndicator(name) ? 0 : name === '금 할인률' ? 2 : 3;
 }
 
 // 데이터 탭: 지표마다 가장 최근 값과 그 직전 값 대비 변화
@@ -964,8 +968,9 @@ function renderLatest(data, datesDesc) {
     let chg = '', cls = '';
     if (cur !== null && prev !== null) {
       if (isPointIndicator(ind.name)) {
-        const diff = cur - prev;
-        chg = `${diff > 0 ? '+' : ''}${diff.toFixed(2)}%p`;
+        const p = pointDigits(ind.name);
+        const diff = +(cur - prev).toFixed(p);
+        chg = `${diff > 0 ? '+' : ''}${diff.toFixed(p)}%p`;
         cls = diff > 0 ? 'up' : diff < 0 ? 'down' : '';
       } else if (prev !== 0) {
         const pct = (cur - prev) / prev * 100;
@@ -1073,7 +1078,7 @@ function renderTable(limit) {
   html += '</tr></thead><tbody>';
   allIndicators.forEach(name => {
     // 오래된 날부터 훑으며 칸마다 직전 기록값 대비 변화를 만든다 (빈 날·이상값은 건너뛴다)
-    const point = isPointIndicator(name);
+    const point = pointDigits(name);
     const chg = {};
     let prev = null;
     for (let i = NO_CHANGE_ROW.has(name) ? -1 : dates.length - 1; i >= 0; i--) {
@@ -1084,8 +1089,8 @@ function renderTable(limit) {
       if (prev !== null) chg[dates[i]] = formatChange(v, prev, point);
       prev = v;
     }
-    html += `<tr><td>${name}</td>`;
-    shown.forEach(d => { html += `<td>${data[d][name] !== undefined ? formatNum(data[d][name]) : '-'}${chg[d] || ''}</td>`; });
+    html += `<tr><td>${escapeHtml(name)}</td>`;
+    shown.forEach(d => { html += `<td>${data[d][name] !== undefined ? escapeHtml(formatNum(data[d][name], name)) : '-'}${chg[d] || ''}</td>`; });
     html += '</tr>';
   });
   html += '</tbody></table>';
@@ -1098,11 +1103,15 @@ const _NF = [
   new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }),
   new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }),
+  new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 4, maximumFractionDigits: 4 }),
 ];
-function formatNum(n) {
+// 기록 자릿수 그대로 보이게: 금 할인률은 2자리("0.160" ✗), 삼성우비율은 4자리("0.787" ✗) (10/20 점검)
+const NUM_DIGITS = { '금 할인률': 2, '삼성우비율': 4 };
+function formatNum(n, name) {
   if (n === undefined || n === null) return '-';
   const num = parseFloat(n);
   if (isNaN(num)) return n;
+  if (NUM_DIGITS[name] != null) return _NF[NUM_DIGITS[name]].format(num);
   if (num >= 100000) return _NF[0].format(num);
   if (num >= 1000)   return _NF[1].format(num);
   if (num >= 10)     return _NF[2].format(num);
@@ -1111,12 +1120,14 @@ function formatNum(n) {
 
 // 표 칸 아래 줄: "-42.65 (4.78%)" 꼴. 금리·금 할인률은 차이만 %p로 (변화율은 오해를 부른다)
 function formatChange(cur, prev, point) {
-  const diff = cur - prev;
+  // point는 %p 지표의 소수 자릿수(금리 3 · 금 할인률 2), 아니면 0. 반올림한 차이로 색을 정한다 —
+  // 금리를 2자리로 잘라 0.004 변화가 빨간 "+0.00%p"로 보였다 (10/20 점검 #9)
+  const diff = point ? +(cur - prev).toFixed(point) : cur - prev;
   const cls = diff > 0 ? 'up' : diff < 0 ? 'down' : '';
   const sign = diff > 0 ? '+' : diff < 0 ? '-' : '';
   let text;
   if (point) {
-    text = `${sign}${Math.abs(diff).toFixed(2)}%p`;
+    text = `${sign}${Math.abs(diff).toFixed(point)}%p`;
   } else {
     const a = Math.abs(cur);
     const nf = a >= 100000 ? _NF[0] : a >= 10 ? _NF[2] : _NF[3];
@@ -1166,7 +1177,8 @@ document.getElementById('indicator-select').addEventListener('change', e => {
 
 // 차트에서 표시하지 않을 이상값 판별
 function isChartOutlier(name, v) {
-  if (v === 0) return true;
+  // 0은 빈 값으로 본다 — 단 금 할인률은 정확히 0인 날이 실제로 있다(2024-07-11·2025-04-01·2026-06-10, 10/20 점검)
+  if (v === 0 && name !== '금 할인률') return true;
   if (name === '금 할인률' && (v > 50 || v < -50)) return true;
   if (name === '금 환산' && v < 10000) return true;
   return false;
@@ -1312,12 +1324,12 @@ function renderEntryFields() {
     const placeholder = ind.placeholder || '';
     if (ind.autoCalc) {
       html += `<div class="ind-field"><label>${escapeHtml(label)}</label>` +
-              `<input type="number" step="any" id="${ind.id}" class="auto-calc" readonly placeholder="${escapeHtml(placeholder)}">` +
+              `<input type="number" step="any" id="${escapeHtml(ind.id)}" class="auto-calc" readonly placeholder="${escapeHtml(placeholder)}">` +
               (ind.autoFormula ? `<span class="auto-label">${escapeHtml(ind.autoFormula)}</span>` : '') +
               `</div>`;
     } else {
       html += `<div class="ind-field"><label>${escapeHtml(label)}</label>` +
-              `<input type="number" step="any" id="${ind.id}" placeholder="${escapeHtml(placeholder)}">` +
+              `<input type="number" step="any" id="${escapeHtml(ind.id)}" placeholder="${escapeHtml(placeholder)}">` +
               `</div>`;
     }
   });
@@ -1494,14 +1506,14 @@ function renderSettingsTab() {
     const isFirst = idx === 0;
     const isLast  = idx === list.length - 1;
     const locked  = !!ind.autoCalc;
-    html += `<div class="settings-row" data-id="${ind.id}">` +
+    html += `<div class="settings-row" data-id="${escapeHtml(ind.id)}">` +
       `<span class="drag-handle" title="드래그해서 이동">⋮⋮</span>` +
       `<span class="ind-name">${escapeHtml(ind.name)}` +
       (locked ? `<span class="ind-locked-tag">자동계산</span>` : '') +
       `</span>` +
-      `<button class="btn-move" data-act="up" data-id="${ind.id}" ${isFirst?'disabled':''} title="위로">↑</button>` +
-      `<button class="btn-move" data-act="down" data-id="${ind.id}" ${isLast?'disabled':''} title="아래로">↓</button>` +
-      `<button class="btn-del" data-act="del" data-id="${ind.id}" ${locked?'disabled':''} title="${locked?'자동계산 지표는 삭제 불가':'삭제'}">🗑</button>` +
+      `<button class="btn-move" data-act="up" data-id="${escapeHtml(ind.id)}" ${isFirst?'disabled':''} title="위로">↑</button>` +
+      `<button class="btn-move" data-act="down" data-id="${escapeHtml(ind.id)}" ${isLast?'disabled':''} title="아래로">↓</button>` +
+      `<button class="btn-del" data-act="del" data-id="${escapeHtml(ind.id)}" ${locked?'disabled':''} title="${locked?'자동계산 지표는 삭제 불가':'삭제'}">🗑</button>` +
     `</div>`;
   });
 
@@ -1679,32 +1691,36 @@ function initFirebase() {
 
 function startSync(key) {
   if (!db || !key.trim()) return;
+  // '/'가 들어가면 doc()이 예외를 던져 설정 창이 안 닫힌다 (10/20 점검)
+  if (key.includes('/')) { showToast('동기화 키에 / 는 쓸 수 없습니다'); return; }
   if (syncUnsubscribe) syncUnsubscribe();
   localStorage.setItem(SYNC_KEY_STORAGE, key.trim());
   localStorage.removeItem(SYNC_OFF_STORAGE);
   setSyncStatus('syncing');
 
-  syncUnsubscribe = db.collection('sync').doc(key.trim()).onSnapshot(snap => {
-    // 내가 방금 올린 데이터면 무시 (echo 방지)
-    if (Date.now() - lastUploadTime < 3000) {
-      setSyncStatus('connected');
-      return;
-    }
+  // 「동기화됨」은 서버가 확인해 준 스냅샷일 때만 (2026-10-20 클라우드 점검 #3).
+  // SDK는 서버에 못 붙으면 캐시(어제 데이터, 또는 없음)를 fromCache로 올려 주는데, 전엔 그것도
+  // 「동기화됨」으로 칠해 연결이 안 됐는지 알 수 없었다. includeMetadataChanges라야 캐시 → 서버
+  // 확인으로 바뀌는 순간(데이터는 같고 metadata만 바뀜)에도 콜백이 와서 상태가 올라간다
+  syncUnsubscribe = db.collection('sync').doc(key.trim()).onSnapshot({ includeMetadataChanges: true }, snap => {
+    const live = !snap.metadata.fromCache;
+    const status = live ? 'connected' : (navigator.onLine ? 'syncing' : 'offline');
     if (!snap.exists) {
-      setSyncStatus('connected');
+      // 서버가 "문서 없음"이라고 하면 키가 틀린 것이다 — 동기화됨이 아니다
+      setSyncStatus(live ? 'missing' : status);
       return;
     }
     try {
       const parsed = JSON.parse(snap.data().payload);
       const raw = JSON.stringify(parsed);
       // 기록은 하루 한 번 바뀐다. 기기에 있는 것과 같으면 다시 저장·다시 그리기를 건너뛴다
-      if (raw === localStorage.getItem(STORAGE_KEY)) { setSyncStatus('connected'); return; }
+      if (raw === localStorage.getItem(STORAGE_KEY)) { setSyncStatus(status); return; }
       localStorage.setItem(STORAGE_KEY, raw);
       renderHome();
       const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
       if (activeTab === 'table') renderTable();
       if (activeTab === 'graph') renderIndicatorSelect();
-      setSyncStatus('connected');
+      setSyncStatus(status);
       showToast('☁️ 새 기록을 받았습니다');
     } catch(e) { setSyncStatus('offline'); }
   }, () => setSyncStatus('offline'));
@@ -1738,8 +1754,9 @@ function stopSync() {
 function setSyncStatus(status) {
   const dots = [document.getElementById('sync-dot'), document.getElementById('sync-dot-modal')];
   const txt = document.getElementById('sync-status-text');
-  const labels = { connected:'동기화됨', syncing:'연결 중...', offline:'오프라인', disconnected:'미연결' };
-  dots.forEach(d => { if(d) { d.className='sync-dot'; if(status!=='disconnected') d.classList.add(status); }});
+  const labels = { connected:'동기화됨', syncing:'연결 중...', offline:'오프라인', missing:'키 확인 필요', disconnected:'미연결' };
+  const dotCls = status === 'missing' ? 'offline' : status;
+  dots.forEach(d => { if(d) { d.className='sync-dot'; if(status!=='disconnected') d.classList.add(dotCls); }});
   if (txt) txt.textContent = labels[status] || '미연결';
 }
 
@@ -1808,6 +1825,15 @@ function migrateGoldRecalc() {
 // # 뒤는 서버로 가지 않는다. 받은 뒤엔 주소창에서 지운다
 const NEW_ORIGIN = 'https://minsung-invest.web.app/';
 const MOVE_KEYS = [SYNC_KEY_STORAGE, INDICATORS_STORAGE, REMOVED_STORAGE];
+// 링크로 들어온 값은 남이 만든 링크일 수도 있다. 전엔 검사 없이 저장해, 지표 id에 HTML을 심은
+// 링크 한 번으로 스크립트가 기기에 남아 매번 실행됐다 (2026-10-20 클라우드 점검 #2 — Playwright 재현)
+const _jsonArr = (v, ok) => { try { const a = JSON.parse(v); return Array.isArray(a) && a.every(ok); } catch { return false; } };
+const MOVE_VALID = {
+  [SYNC_KEY_STORAGE]: v => /^[A-Za-z0-9_-]{1,64}$/.test(v),
+  [INDICATORS_STORAGE]: v => _jsonArr(v, i => i && typeof i === 'object'
+    && /^[A-Za-z0-9_-]{1,40}$/.test(i.id) && typeof i.name === 'string' && i.name.length <= 30),
+  [REMOVED_STORAGE]: v => _jsonArr(v, s => typeof s === 'string' && s.length <= 30),
+};
 function b64urlEncode(s) { return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 function b64urlDecode(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return decodeURIComponent(escape(atob(s))); }
 function importMovedSettings() {
@@ -1816,7 +1842,11 @@ function importMovedSettings() {
   let n = 0;
   try {
     const data = JSON.parse(b64urlDecode(m[1]));
-    MOVE_KEYS.forEach(k => { if (typeof data[k] === 'string' && localStorage.getItem(k) === null) { localStorage.setItem(k, data[k]); n++; } });
+    MOVE_KEYS.forEach(k => {
+      if (typeof data[k] !== 'string' || localStorage.getItem(k) !== null) return;
+      if (!MOVE_VALID[k](data[k])) return;   // 모양이 다르면 통째로 버린다
+      localStorage.setItem(k, data[k]); n++;
+    });
   } catch (e) {}
   history.replaceState(null, '', location.pathname + location.search);
   if (n) setTimeout(() => showToast('옛 주소의 설정(동기화 키·지표 목록)을 가져왔습니다'), 800);

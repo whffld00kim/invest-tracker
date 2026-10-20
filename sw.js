@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v26';   // v26: 앱이 다시 보이면 구독을 새로 건다 (2026-10-15)
+const CACHE = 'invest-tracker-v27';   // v27: 클라우드 점검 반영 — 동기화됨은 서버 확인 때만 · #move= 검증·escape · 금리 변화 3자리 (2026-10-20)
 const ASSETS = [
   './',
   './index.html',

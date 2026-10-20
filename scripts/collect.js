@@ -154,7 +154,9 @@ function prevWeekday(iso) {
 function isFresh(zone, at, today) {
   if (zone === 'always') return true;
   const local = String(at || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(local)) return true;   // 시각을 안 주면 판정할 수 없다 — 종전대로 받는다
+  // 시각을 안 주면 판정할 수 없다. 받아 버리면 휴장일에 지난 종가가 조용히 들어가므로(09-08 이전 문제)
+  // 실패로 센다 — 다른 값은 저장되고 종료코드 1로 로그에 남는다 (2026-10-20 클라우드 점검 #4)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(local)) throw new Error('거래 시각(localTradedAt)이 없음 — API 변경?');
   return zone === 'kr' ? local === today : local >= prevWeekday(today);
 }
 
@@ -177,6 +179,11 @@ function addDerived(v) {
 async function isTradingDay(today) {
   const d = await getJson(`${MOBILE}/index/KOSPI/basic`);
   const traded = (d.localTradedAt || '').slice(0, 10);
+  // 시각이 없으면 "휴장"이 아니라 "판정 불가"다. 휴장으로 치면 응답 형식이 바뀐 날부터
+  // 매일 조용히 건너뛰고 Actions는 초록으로 남는다 (2026-10-20 클라우드 점검 #4)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(traded)) {
+    throw new Error('코스피 응답에 localTradedAt이 없습니다 (API 변경?) — 거래일 판정 불가');
+  }
   return { ok: traded === today, traded };
 }
 
@@ -184,10 +191,17 @@ async function isTradingDay(today) {
 // 서비스 계정이 있으면 그걸로(보안 규칙을 우회한다), 없으면 공개 웹 키로 붙는다.
 async function accessToken() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) return null;
+  if (!raw) {
+    // Actions에서 시크릿이 비면 --dry 점검이 공개 웹 키로 조용히 "성공"한다 — 거기선 오류로 (10/20 점검)
+    if (process.env.GITHUB_ACTIONS === 'true') throw new Error('FIREBASE_SERVICE_ACCOUNT 시크릿이 비어 있습니다');
+    return null;
+  }
   // 키 파일을 그대로 시크릿에 넣으면 BOM이 앞에 붙어 오는 일이 잦다 (Windows에서
   // 흔하다). 눈에 안 보이는 한 글자 때문에 JSON.parse가 깨지므로 미리 걷어낸다.
-  const sa = JSON.parse(raw.replace(/^﻿/, '').trim());
+  // 파싱 오류 문구엔 입력 일부가 찍힐 수 있다 — 공개 저장소의 Actions 로그는 공개라 고정 문구로 바꾼다
+  let sa;
+  try { sa = JSON.parse(raw.replace(/^﻿/, '').trim()); }
+  catch { throw new Error('FIREBASE_SERVICE_ACCOUNT 시크릿이 올바른 JSON이 아닙니다'); }
   const crypto = await import('node:crypto');
 
   const now = Math.floor(Date.now() / 1000);
@@ -280,7 +294,30 @@ async function writePayload(token, data) {
 }
 
 // ── 실행 ────────────────────────────────────────────────────────────────
+// --date 검증: 형식·실존 날짜·오늘 이하. "2026-10-2" 같은 키가 생기면 앱 정렬과 PC 동기화가 그 키를 만난다
+// (2026-10-20 클라우드 점검 #7). --drop 은 쉼표로 여러 날짜를 받으므로 하나씩 본다
+function badDate(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '형식은 YYYY-MM-DD';
+  const d = new Date(`${s}T00:00:00Z`);
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s) return '없는 날짜';
+  if (s > kstToday()) return '미래 날짜';
+  return null;
+}
+
 (async () => {
+  if (DATE_ARG != null) {
+    const bad = DATE_ARG.split(',').map(s => s.trim()).map(s => [s, badDate(s)]).filter(([, why]) => why);
+    if (!DATE_ARG.trim() || bad.length) {
+      console.error(`--date 값이 잘못됐습니다: ${bad.map(([s, why]) => `${s || '(빈 값)'} (${why})`).join(', ') || '(빈 값)'}`);
+      process.exitCode = 1;
+      return;
+    }
+    if (!DROP && DATE_ARG.includes(',')) {
+      console.error('--date 에 여러 날짜를 쓸 수 있는 건 --drop 일 때뿐입니다');
+      process.exitCode = 1;
+      return;
+    }
+  }
   const today = DATE_ARG || kstToday();
 
   // --drop: 수집 없이 그 날짜의 그 지표만 지운다. 저장이 기존 키를 살리는 병합이라
@@ -375,17 +412,31 @@ async function writePayload(token, data) {
   const data = await readPayload(token);
   console.log(`클라우드 읽기 OK — 기존 ${Object.keys(data).length}일치`);
 
-  const before = data[today];
-  // 오늘 기록이 있고, 방금 모은 지표가 전부 거기 이미 들어 있으면 예약 실행은 물러난다.
-  // "전부"를 따지는 이유: 아침 실행이 일부 지표를 놓친 채 저장됐다면 빈칸은 채워야 한다.
-  if (SKIP_IF_RECORDED && before && Object.keys(ordered).every(k => before[k] != null)) {
-    console.log(`오늘(${today}) 기록이 이미 있습니다 (${Object.keys(before).length}개). 예약 실행이라 덮어쓰지 않고 종료합니다.`);
+  // 모은 값이 하나도 없으면(예: 미국 휴장일에 --only 나스닥) 빈 기록 {} 을 만들지 않는다 (10/20 점검 #7)
+  if (!Object.keys(ordered).length) {
+    console.log('저장할 값이 없습니다. 종료합니다.');
+    if (failed.length) process.exitCode = 1;
     return;
+  }
+
+  const before = data[today];
+  let next = { ...(before || {}), ...ordered };  // 손으로 넣은 값이 있으면 살려둔다
+  // 예약 실행은 오늘 기록이 있으면 **빈칸만** 채운다. 아침(10:37) 값은 건드리지 않는다.
+  // 전엔 "전부 있나"만 보고, 하나라도 빠졌으면 모은 값 전체로 덮어 아침 값이 몇 시간 뒤 오후 시세로
+  // 바뀌었다 (2026-10-20 클라우드 점검 #1 — 지표 하나를 뺀 스텁 재현에서 23개가 전부 바뀜)
+  if (SKIP_IF_RECORDED && before) {
+    const fill = Object.fromEntries(Object.entries(ordered).filter(([k]) => before[k] == null));
+    if (!Object.keys(fill).length) {
+      console.log(`오늘(${today}) 기록이 이미 있습니다 (${Object.keys(before).length}개). 예약 실행이라 덮어쓰지 않고 종료합니다.`);
+      return;
+    }
+    console.log(`예약 실행: 오늘 기록의 빈칸만 채웁니다 — ${Object.keys(fill).join(', ')}`);
+    next = { ...before, ...fill };
   }
 
   if (DRY) { console.log('--dry 이므로 저장하지 않았습니다.'); return; }
 
-  data[today] = { ...(before || {}), ...ordered };  // 손으로 넣은 값이 있으면 살려둔다
+  data[today] = next;
   await writePayload(token, data);
 
   console.log(`저장 완료 — 전체 ${Object.keys(data).length}일치, ${today} ${before ? '갱신' : '추가'}`);
