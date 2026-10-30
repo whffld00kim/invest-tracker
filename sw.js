@@ -1,11 +1,11 @@
-const CACHE = 'invest-tracker-v27';   // v27: 클라우드 점검 반영 — 동기화됨은 서버 확인 때만 · #move= 검증·escape · 금리 변화 3자리 (2026-10-20)
+const CACHE = 'invest-tracker-v28';   // v28: 홈 화면 아이콘 밤하늘 한 벌로 교체 (2026-10-29)
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './initial_data.js',
-  './icon-192.png',
-  './icon-512.png',
+  './icons/app-any-192.png',
+  './icons/app-maskable-512.png',
   'https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js',
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js',
