@@ -9,6 +9,7 @@
       "firebase.json",
       "firestore.rules",
       "**/.*",
+      "**/.*/**",
       "**/node_modules/**",
       "scripts/**",
       "package.json",
