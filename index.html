@@ -7,8 +7,8 @@
   // 옛 주소(github.io) → 전용 주소 minsung-invest.web.app (2026-10-15 이전).
   // 2026-11-14: 「새 주소로 이동」 띠만 띄우던 것을 바로 넘기도록 바꿨다 — 옛 주소는 다른 웹앱들과 저장소를 나눠 쓰는 주소인데
   // 옛 판 앱이 거기서 통째로 돌고 있었다. 기기에만 있는 설정(지표 목록·지운 지표)은 종전 띠와 같은 방식(#move=)으로 실어 보내고,
-  // 새 주소가 한 번 받아 저장한다(이미 있는 값은 안 덮는다 — 아래 importMovedSettings).
-  // 동기화 키는 싣지 않는다 — 새 주소는 키가 없으면 매일 수집되는 문서(0000)에 붙는다. 옛 키를 실어 가면 4월에 멈춘 문서에 붙을 수 있다.
+  // 새 주소가 한 번 받아 저장한다(이미 설정을 가진 기기는 안 받는다 — 아래 importMovedSettings).
+  // 동기화 키는 싣지 않는다 — 새 주소는 늘 매일 수집되는 문서(0000)에 붙는다.
   // 이 주소에 남은 이 앱의 것(기록 사본·서비스워커·캐시)은 지운다. 설정 두 칸은 남긴다(넘어가다 끊겨도 다음에 다시 실어 보낼 수 있게).
   (function () {
     if (!/(^|\.)github\.io$/.test(location.hostname)) return;
@@ -47,14 +47,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="투자 트래커">
-  <!-- Firebase는 첫 화면을 그린 뒤에 불러온다 (loadFirebase, 2026-09-29). auth는 받기 전용이 된 뒤로 안 쓴다 -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-  <script src="./initial_data.js"></script>
+  <!-- 라이브러리는 앱과 함께 배포한다(vendor/, 2026-11-14 — 그전엔 외부 CDN 에서 변조 확인 없이 받았다. 원본은 npm 꾸러미 그대로).
+       그래프·정렬은 그 탭을 열 때에야 쓰므로 defer 로 받아 첫 화면을 막지 않는다. Firebase 는 첫 화면을 그린 뒤 loadFirebase 가 부른다 -->
+  <script defer src="./vendor/chart.umd.js"></script>
+  <script defer src="./vendor/hammer.min.js"></script>
+  <script defer src="./vendor/chartjs-plugin-zoom.min.js"></script>
+  <script defer src="./vendor/Sortable.min.js"></script>
   <style>
-/* 맨 위에서 아래로 당기면 크롬이 페이지를 새로고침하던 것을 막는다 (2026-09-28 사용자 요청 — 새로고침되며 로그인 화면이 다시 떴다) */
+/* 맨 위에서 아래로 당기면 크롬이 페이지를 새로고침하던 것을 막는다 (2026-09-28 사용자 요청) */
 html, body { overscroll-behavior-y: none; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -66,11 +66,14 @@ html, body { overscroll-behavior-y: none; }
       --border: #e2e8f0;
       --text: #0f172a;
       --text-muted: #64748b;
+      --up: #dc2626;      /* 오르면 빨강 */
+      --down: #2563eb;    /* 내리면 파랑 */
       --header-h: 56px;
       --tab-h: 60px;
     }
 
     html, body { height: 100%; background: var(--bg); font-family: -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; color: var(--text); }
+    button { font-family: inherit; }
 
     /* ── HEADER ── */
     #header {
@@ -78,7 +81,7 @@ html, body { overscroll-behavior-y: none; }
       height: var(--header-h);
       background: var(--primary);
       display: flex; align-items: center; justify-content: space-between;
-      padding: 0 16px;
+      padding: 0 8px 0 16px;
       box-shadow: 0 2px 8px rgba(0,0,0,.2);
     }
     #header h1 { color: #fff; font-size: 17px; font-weight: 700; }
@@ -92,21 +95,14 @@ html, body { overscroll-behavior-y: none; }
 
     .tab-content { display: none; height: 100%; overflow-y: auto; padding: 16px; }
     .tab-content.active { display: block; }
-    /* 표 탭은 숨길 때도 치우지 않고 안 보이게만 둔다 — 2만 칸 표의 배치 계산을 탭을 열 때마다
-       다시 하느라 멈췄다 (2026-09-28, PC에서도 0.5초). 보일 때와 같은 크기·같은 display를 유지해야 재계산이 없다.
-       content-visibility:hidden = 숨긴 동안 안쪽 계산을 건너뛰고 배치 결과는 보관 (다른 탭 전환도 가볍게) */
+    /* 표 탭은 숨길 때도 치우지 않고 안 보이게만 둔다 — 표의 배치 계산을 탭을 열 때마다 다시 하느라 멈췄다 (2026-09-28).
+       보일 때와 같은 크기·같은 display를 유지해야 재계산이 없다. content-visibility:hidden = 숨긴 동안 안쪽 계산을 건너뛰고 배치 결과는 보관 */
     #tab-table { contain: strict; }
     #tab-table:not(.active) { display: block; position: absolute; inset: 0; content-visibility: hidden; pointer-events: none; }
 
     /* ── 스와이프 애니메이션 ── */
-    @keyframes swipeInFromRight {
-      from { transform: translateX(30%); opacity: 0.2; }
-      to   { transform: translateX(0);   opacity: 1;   }
-    }
-    @keyframes swipeInFromLeft {
-      from { transform: translateX(-30%); opacity: 0.2; }
-      to   { transform: translateX(0);    opacity: 1;   }
-    }
+    @keyframes swipeInFromRight { from { transform: translateX(30%); opacity: 0.2; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes swipeInFromLeft  { from { transform: translateX(-30%); opacity: 0.2; } to { transform: translateX(0); opacity: 1; } }
     .tab-content.active.swipe-right { animation: swipeInFromRight 0.22s ease-out; }
     .tab-content.active.swipe-left  { animation: swipeInFromLeft  0.22s ease-out; }
 
@@ -129,92 +125,119 @@ html, body { overscroll-behavior-y: none; }
 
     /* ── CARDS ── */
     .card { background: var(--card); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); padding: 16px; margin-bottom: 12px; }
-    .card-title { font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: .5px; }
+    .card-title { font-size: 12px; font-weight: 700; color: var(--text-muted); letter-spacing: .5px; }
 
-    /* ── HOME TAB ── */
-    #btn-add {
-      width: 100%; padding: 14px;
-      background: var(--primary); color: #fff;
-      border: none; border-radius: 12px;
-      font-size: 16px; font-weight: 600; cursor: pointer;
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-      margin-bottom: 16px;
-      box-shadow: 0 2px 8px rgba(29,78,216,.3);
+    /* 고르는 단추 묶음 (견줄 시점 · 그래프 기간) */
+    .seg { display: inline-flex; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 2px; gap: 2px; }
+    .seg button {
+      border: none; background: transparent; color: var(--text-muted);
+      font-size: 13px; font-weight: 600; padding: 0 11px; min-height: 36px; min-width: 44px;
+      border-radius: 8px; cursor: pointer; white-space: nowrap;
     }
-    #btn-add:active { opacity: .85; }
+    .seg button.active { background: var(--card); color: var(--primary); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
 
-    /* ── 백업/복원 ── */
-    .backup-row { display: flex; gap: 8px; margin-bottom: 16px; }
-    .btn-backup, .btn-restore {
-      flex: 1; padding: 10px 8px;
-      border: 1.5px solid var(--border); border-radius: 10px;
+    /* ── 데이터 탭: 최근값 판 ── */
+    .latest-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+    .latest-asof { font-weight: 500; letter-spacing: 0; margin-left: 6px; }
+    .latest-note { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; min-height: 16px; }
+    .latest-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .lt-item {
+      display: flex; flex-direction: column; justify-content: center; gap: 2px;
+      min-height: 0; overflow: hidden;
+      padding: 9px 12px; text-align: left;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+      font-family: inherit; color: var(--text); cursor: pointer;
+    }
+    .lt-item:active { background: var(--primary-light); }
+    .lt-name { font-size: 12px; font-weight: 600; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lt-val { font-size: 17px; font-weight: 700; white-space: nowrap; }
+    .lt-chg { font-size: 12px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+    .lt-chg.up { color: var(--up); }
+    .lt-chg.down { color: var(--down); }
+    .lt-date { font-weight: 400; margin-left: 6px; color: var(--text-muted); font-size: 11px; }
+
+    /* ── 데이터 탭: 백업 · 날짜 목록 ── */
+    .backup-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .btn-backup {
+      flex: 1; padding: 12px 8px; min-height: 44px;
+      border: 1.5px solid #86efac; border-radius: 10px;
       font-size: 13px; font-weight: 600; cursor: pointer;
       display: flex; align-items: center; justify-content: center; gap: 6px;
+      background: #f0fdf4; color: #166534;
     }
-    .btn-backup { background: #f0fdf4; color: #166534; border-color: #86efac; }
     .btn-backup:active { background: #dcfce7; }
-    .btn-restore { background: #fff7ed; color: #9a3412; border-color: #fdba74; }
-    .btn-restore:active { background: #ffedd5; }
-
-    .entry-list { display: flex; flex-direction: column; gap: 8px; }
+    .records-summary { font-size: 13px; color: var(--text-muted); margin: 8px 0 0; line-height: 1.5; }
+    .btn-toggle {
+      width: 100%; min-height: 40px; margin-top: 10px;
+      background: transparent; border: 1px dashed var(--border); border-radius: 10px;
+      font-size: 13px; color: var(--text-muted); cursor: pointer;
+    }
+    .entry-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .entry-list:empty { display: none; }
     .entry-item {
       background: var(--card); border-radius: 10px;
-      padding: 12px 14px; cursor: pointer;
+      padding: 10px 14px;
       border: 1px solid var(--border);
       display: flex; align-items: center; justify-content: space-between;
     }
     .entry-date { font-weight: 600; font-size: 14px; }
     .entry-count { font-size: 12px; color: var(--text-muted); }
-    .entry-del { background: none; border: none; color: #ef4444; font-size: 18px; padding: 4px 8px; cursor: pointer; }
-
-    .empty-state { text-align: center; padding: 48px 24px; color: var(--text-muted); }
-    .empty-state .big { font-size: 48px; margin-bottom: 12px; }
-    .empty-state p { font-size: 14px; line-height: 1.6; }
 
     /* ── TABLE TAB ── */
     #tab-table { padding: 0; }
-    .table-wrap { overflow: auto; height: 100%; padding: 12px; }
+    .table-wrap { overflow: auto; height: 100%; padding: 12px 8px; }
     table { border-collapse: collapse; white-space: nowrap; font-size: 13px; }
-    th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: right; }
+    /* 폰에서 날짜 세 칸이 한 화면에 들어오도록 칸 여백을 줄였다 (2026-11-14 — 그전엔 두 칸) */
+    th, td { border: 1px solid var(--border); padding: 7px 5px; text-align: right; }
     th { background: #f8fafc; font-weight: 600; position: sticky; top: 0; z-index: 2; }
     th:first-child { left: 0; z-index: 3; text-align: left; }
-    td:first-child { position: sticky; left: 0; background: #f8fafc; font-weight: 500; text-align: left; z-index: 1; }
+    td:first-child { position: sticky; left: 0; background: #f8fafc; font-weight: 500; text-align: left; z-index: 1; line-height: 1.35; }
+    /* 이름이 긴 비율 지표(에이피알/삼성전자)는 빗금 뒤에서 줄을 바꾼다 — 첫 칸이 넓어져 날짜 칸이 밀리지 않게 */
+    .nm-br::after { content: '\A'; white-space: pre; }
     tr:hover td { background: var(--primary-light); }
     tr:hover td:first-child { background: var(--primary-light); }
     /* 칸 아래 줄: 직전 기록일 대비 차이 (변화율) — 오르면 빨강, 내리면 파랑 (2026-10-12) */
     td .chg { display: block; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-    td .chg.up { color: #dc2626; }
-    td .chg.down { color: #2563eb; }
-    .no-data { text-align: center; padding: 60px 24px; color: var(--text-muted); }
+    td .chg.up { color: var(--up); }
+    td .chg.down { color: var(--down); }
+    .no-data { text-align: center; padding: 60px 24px; color: var(--text-muted); font-size: 14px; line-height: 1.7; }
 
     /* ── GRAPH TAB ── */
+    #tab-graph.active { display: flex; flex-direction: column; }
     .select-wrap {
       background: var(--card); border-radius: 10px;
-      border: 1px solid var(--border); padding: 8px 12px;
-      margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+      border: 1px solid var(--border); padding: 0 12px;
+      margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
     }
     .select-wrap label { font-size: 13px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
-    select { flex: 1; border: none; background: transparent; font-size: 15px; font-weight: 600; color: var(--text); outline: none; cursor: pointer; }
-    .chart-card { background: var(--card); border-radius: 12px; padding: 16px; position: relative; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    .chart-canvas-wrap { height: 300px; }
+    select { flex: 1; min-height: 46px; border: none; background: transparent; font-size: 15px; font-weight: 600; color: var(--text); outline: none; cursor: pointer; font-family: inherit; }
+    /* 그래프가 남는 높이를 채운다 (2026-11-14 — 그전엔 300px 고정이라 폰은 아래가 비었다). 화면이 낮으면 줄이지 않고 탭이 스크롤된다 */
+    #chart-area { flex: 1 0 auto; display: flex; flex-direction: column; }
+    .chart-card { flex: 1 0 auto; display: flex; flex-direction: column; background: var(--card); border-radius: 12px; padding: 14px 16px; position: relative; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .chart-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 8px; }
+    .chart-canvas-wrap { flex: 1 1 auto; position: relative; min-height: 260px; }
+    .chart-canvas-wrap canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
     .chart-hint { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 8px; }
-    #btn-reset-zoom { display: block; margin: 8px auto 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; padding: 4px 12px; cursor: pointer; color: var(--text-muted); }
-    .latest-val { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
-    .latest-num { font-size: 28px; font-weight: 700; }
+    .latest-val { display: flex; align-items: baseline; gap: 8px; }
+    .latest-num { font-size: 26px; font-weight: 700; }
     .latest-label { font-size: 13px; color: var(--text-muted); }
 
-    /* ── 최고값 표시 ── */
+    /* 기간 최고·최저 */
     .peak-row {
-      display: flex; align-items: center; gap: 10px;
+      display: flex; align-items: center; gap: 8px;
       background: #fefce8; border: 1px solid #fde047;
-      border-radius: 8px; padding: 7px 12px; margin-bottom: 12px;
+      border-radius: 8px; padding: 6px 10px; margin-bottom: 6px;
     }
+    .peak-row.low { background: #f8fafc; border-color: var(--border); }
     .peak-label { font-size: 11px; font-weight: 700; color: #854d0e; white-space: nowrap; }
-    .peak-val   { font-size: 15px; font-weight: 700; color: #78350f; }
-    .peak-date  { font-size: 11px; color: #92400e; flex: 1; }
-    .peak-diff  { font-size: 12px; font-weight: 700; white-space: nowrap; }
-    .peak-diff.neg { color: #dc2626; }
-    .peak-diff.pos { color: #16a34a; }
+    .peak-row.low .peak-label { color: var(--text-muted); }
+    .peak-val   { font-size: 14px; font-weight: 700; color: #78350f; white-space: nowrap; }
+    .peak-row.low .peak-val { color: var(--text); }
+    .peak-date  { font-size: 11px; color: #92400e; flex: 1; white-space: nowrap; }
+    .peak-row.low .peak-date { color: var(--text-muted); }
+    .peak-diff  { font-size: 12px; font-weight: 700; white-space: nowrap; color: var(--text-muted); }
+    .peak-diff.up { color: var(--up); }
+    .peak-diff.down { color: var(--down); }
     .no-chart { text-align: center; padding: 80px 24px; color: var(--text-muted); font-size: 14px; }
 
     /* ── MODAL ── */
@@ -227,185 +250,82 @@ html, body { overscroll-behavior-y: none; }
     .modal {
       background: var(--card); border-radius: 20px 20px 0 0;
       width: 100%; max-width: 600px;
-      padding: 20px 20px 32px;
+      padding: 20px 20px 28px;
       max-height: 90vh; overflow-y: auto;
       animation: slideUp .25s ease-out;
     }
     @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-    .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
     .modal-title { font-size: 18px; font-weight: 700; }
-    .modal-close { background: var(--bg); border: none; width: 30px; height: 30px; border-radius: 50%; font-size: 16px; cursor: pointer; color: var(--text-muted); }
+    .modal-close { background: var(--bg); border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 16px; cursor: pointer; color: var(--text-muted); }
 
-    /* Form */
-    .form-row { margin-bottom: 12px; }
-    .form-row label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; color: var(--text-muted); }
-    .form-row input[type="date"] { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; background: var(--bg); color: var(--text); }
-
-    /* Indicator group */
-    .group-title {
-      font-size: 12px; font-weight: 700; color: var(--primary);
-      text-transform: uppercase; letter-spacing: .5px;
-      padding: 10px 0 6px; border-bottom: 2px solid var(--primary-light);
-      margin-bottom: 8px; margin-top: 4px;
-    }
-    .indicator-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
-    .ind-field { display: flex; flex-direction: column; gap: 3px; }
-    .ind-field label { font-size: 11px; color: var(--text-muted); font-weight: 500; }
-    .ind-field input {
-      padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px;
-      font-size: 14px; background: var(--bg); color: var(--text);
-      width: 100%;
-    }
-    .ind-field input:focus { outline: none; border-color: var(--primary); background: #fff; }
-
-    /* Custom fields */
-    .custom-fields { margin-top: 8px; }
-    .custom-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; margin-bottom: 6px; align-items: center; }
-    .custom-row input { padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; font-size: 13px; background: var(--bg); color: var(--text); }
-    .btn-del-custom { background: none; border: none; color: #ef4444; font-size: 18px; cursor: pointer; padding: 0 4px; }
-    #btn-add-custom {
-      background: none; border: 1px dashed var(--border); border-radius: 7px;
-      padding: 6px 12px; font-size: 13px; color: var(--text-muted);
-      cursor: pointer; width: 100%; margin-top: 4px;
-    }
-
-    /* 자동계산 필드 */
-    .ind-field input.auto-calc {
-      background: #f0f9ff; color: #0369a1;
-      border-color: #bae6fd; font-weight: 600;
-      cursor: default;
-    }
-    .ind-field .auto-label { font-size: 10px; color: #0284c7; margin-top: 2px; }
-
-    /* Save button */
-    #btn-save-entry {
-      width: 100%; padding: 14px; margin-top: 16px;
-      background: var(--primary); color: #fff;
-      border: none; border-radius: 12px;
-      font-size: 16px; font-weight: 600; cursor: pointer;
-    }
-    #btn-save-entry:active { opacity: .85; }
-
-    /* ── SYNC ── */
+    /* ── 상태 창 (☁️) ── */
     #btn-sync-open {
       background: transparent; border: none; color: #fff;
-      font-size: 20px; cursor: pointer; padding: 4px 8px;
-      display: flex; align-items: center; gap: 4px;
+      font-size: 20px; cursor: pointer; min-width: 52px; min-height: 44px; padding: 4px 8px;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
     }
-    .sync-dot {
-      width: 9px; height: 9px; border-radius: 50%;
-      background: #94a3b8; display: inline-block; flex-shrink: 0;
-    }
+    .sync-dot { width: 9px; height: 9px; border-radius: 50%; background: #94a3b8; display: inline-block; flex-shrink: 0; }
     .sync-dot.connected { background: #22c55e; }
     .sync-dot.syncing { background: #f59e0b; animation: syncPulse 1s infinite; }
-    .sync-dot.offline { background: #ef4444; }
+    .sync-dot.offline, .sync-dot.warn { background: #ef4444; }
     @keyframes syncPulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-
-    #modal-sync .sync-info {
-      font-size: 13px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.5;
+    .sync-state { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .sync-detail { font-size: 13px; color: #b45309; line-height: 1.5; margin-bottom: 4px; }
+    .sync-detail:empty { display: none; }
+    .sync-rows { margin: 10px 0 14px; border-top: 1px solid var(--border); }
+    .sync-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+    .sync-row span:first-child { color: var(--text-muted); white-space: nowrap; }
+    .sync-row span:last-child { text-align: right; font-weight: 600; }
+    .sync-actions { display: flex; flex-direction: column; gap: 8px; }
+    .btn-main {
+      width: 100%; min-height: 46px; padding: 10px;
+      background: #0f172a; color: #fff; border: none; border-radius: 10px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
     }
-    #sync-status-row {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 13px; color: var(--text-muted); margin: 8px 0 14px;
-    }
-    .sync-btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-    .btn-sync-up, .btn-sync-down {
-      padding: 12px 8px; border: none; border-radius: 10px;
-      font-size: 14px; font-weight: 600; cursor: pointer;
-      display: flex; flex-direction: column; align-items: center; gap: 3px;
-    }
-    .btn-sync-up { background: var(--primary); color: #fff; }
-    .btn-sync-down { background: #0f172a; color: #fff; }
-    .btn-sync-up span, .btn-sync-down span { font-size: 11px; font-weight: 400; opacity: .8; }
-    /* 저장 권한 (Google 로그인) */
-    #auth-row {
-      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-      padding: 10px 12px; margin-bottom: 14px;
-      background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
-      font-size: 13px; color: var(--text-muted);
-    }
-    #auth-state { flex: 1; min-width: 0; line-height: 1.4; }
-    #auth-state b { color: var(--text); font-weight: 600; }
-    #btn-auth {
-      padding: 7px 12px; border: 1px solid var(--border); border-radius: 8px;
-      background: var(--card); color: var(--text);
-      font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
-    }
-    #btn-auth:disabled { opacity: .5; cursor: default; }
-
-    #btn-sync-disconnect {
-      width: 100%; padding: 10px; margin-top: 8px;
-      background: transparent; color: #ef4444;
-      border: 1px solid #ef4444; border-radius: 10px;
-      font-size: 14px; cursor: pointer;
-    }
+    .btn-main.warn { background: transparent; color: #b45309; border: 1px solid #f59e0b; }
+    .sync-info { font-size: 12px; color: var(--text-muted); margin-top: 12px; line-height: 1.6; }
 
     /* ── 설정 탭 ── */
-    .settings-info { font-size: 13px; color: var(--text-muted); margin: 4px 0 14px; line-height: 1.5; }
-    .btn-settings-add {
-      width: 100%; padding: 12px; margin-bottom: 14px;
-      background: var(--primary); color: #fff;
-      border: none; border-radius: 10px;
-      font-size: 14px; font-weight: 600; cursor: pointer;
-    }
+    .settings-info { font-size: 13px; color: var(--text-muted); margin: 6px 0 14px; line-height: 1.6; }
     .btn-settings-reset {
-      width: 100%; padding: 10px; margin-top: 12px;
+      width: 100%; min-height: 42px; padding: 10px; margin-top: 12px;
       background: transparent; color: var(--text-muted);
       border: 1px dashed var(--border); border-radius: 10px;
       font-size: 13px; cursor: pointer;
     }
     .btn-settings-reset:active { background: var(--bg); }
-    .settings-group { margin-bottom: 18px; }
-    .settings-group-title {
-      font-size: 12px; font-weight: 700; color: var(--primary);
-      text-transform: uppercase; letter-spacing: .5px;
-      padding: 8px 0 6px; border-bottom: 2px solid var(--primary-light);
-      margin-bottom: 6px;
-    }
     .settings-row {
       display: flex; align-items: center; gap: 6px;
-      padding: 9px 10px; margin-bottom: 5px;
+      padding: 7px 10px; margin-bottom: 5px;
       background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
     }
+    .settings-row.is-hidden { opacity: .55; }
     .settings-row.sortable-ghost { opacity: .4; background: var(--primary-light); border-color: var(--primary); }
     .settings-row.sortable-chosen { background: #fff; }
     .settings-row.sortable-drag { box-shadow: 0 6px 18px rgba(0,0,0,.18); cursor: grabbing; }
     .settings-row .drag-handle {
-      cursor: grab; padding: 4px 6px;
+      cursor: grab; padding: 8px 8px; margin: -4px 0 -4px -6px;
       color: var(--text-muted); font-size: 18px;
       user-select: none; -webkit-user-select: none;
       touch-action: none;
       flex-shrink: 0;
     }
     .settings-row .drag-handle:active { cursor: grabbing; color: var(--primary); }
-    .settings-row .ind-name { flex: 1; font-size: 14px; font-weight: 500; color: var(--text); }
-    .settings-row .ind-locked-tag {
-      font-size: 10px; color: #0284c7; background: #e0f2fe;
-      padding: 2px 6px; border-radius: 4px; margin-left: 4px;
-    }
-    .settings-row .btn-move, .settings-row .btn-del {
-      width: 32px; height: 32px; border: 1px solid var(--border);
+    .settings-row .ind-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; color: var(--text); }
+    .settings-row .ind-tag { font-size: 10px; color: #0284c7; background: #e0f2fe; padding: 2px 6px; border-radius: 4px; margin-left: 4px; white-space: nowrap; }
+    .settings-row .ind-tag.off { color: #64748b; background: #e2e8f0; }
+    .settings-row .btn-move, .settings-row .btn-hide {
+      width: 36px; height: 36px; border: 1px solid var(--border);
       background: var(--card); border-radius: 6px;
       font-size: 14px; cursor: pointer; color: var(--text);
       display: flex; align-items: center; justify-content: center;
       padding: 0; flex-shrink: 0;
     }
-    .settings-row .btn-move:active, .settings-row .btn-del:active { background: var(--bg); }
+    .settings-row .btn-hide { width: 54px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    .settings-row.is-hidden .btn-hide { color: var(--primary); border-color: var(--primary); }
+    .settings-row .btn-move:active, .settings-row .btn-hide:active { background: var(--bg); }
     .settings-row .btn-move:disabled { opacity: .3; cursor: not-allowed; }
-    .settings-row .btn-del { color: #ef4444; border-color: #fca5a5; }
-    .settings-row .btn-del:disabled { color: #cbd5e1; border-color: var(--border); cursor: not-allowed; }
-
-    .btn-settings-add-confirm {
-      width: 100%; padding: 13px; margin-top: 4px;
-      background: var(--primary); color: #fff;
-      border: none; border-radius: 10px;
-      font-size: 15px; font-weight: 600; cursor: pointer;
-    }
-    #new-ind-group, #new-ind-name, #new-ind-placeholder {
-      width: 100%; padding: 10px 12px;
-      border: 1px solid var(--border); border-radius: 8px;
-      font-size: 15px; background: var(--bg); color: var(--text);
-    }
 
     /* Toast */
     #toast {
@@ -413,25 +333,28 @@ html, body { overscroll-behavior-y: none; }
       background: #0f172a; color: #fff; padding: 10px 20px;
       border-radius: 20px; font-size: 14px; z-index: 300;
       pointer-events: none; opacity: 0; transition: opacity .3s;
-      white-space: nowrap;
+      width: max-content; max-width: calc(100vw - 32px); text-align: center; line-height: 1.4;
     }
     #toast.show { opacity: 1; }
 
     /* 태블릿 가로 전용 판 — 폰에서는 보이지 않는다 */
-    .home-latest, .ind-picker { display: none; }
+    .ind-picker { display: none; }
+    /* 폰·폴드: 날짜 목록은 단추를 눌러야 편다. 태블릿 가로는 늘 펴 둔다(아래 블록) */
+    #entry-list.collapsed { display: none; }
 
     /* ============ 태블릿 (2026-09-28) ============
        갤럭시 탭을 가로로 두고 쓸 때. 폰 화면(위 규칙 전부)은 건드리지 않고 넓을 때만 덮어쓴다.
        - 하단 탭 → 왼쪽 세로 레일
-       - 데이터 탭(10/12까지 홈): 지표별 최근값 판(왼쪽) + 저장된 날짜 목록(오른쪽)
+       - 데이터 탭: 지표별 최근값 판(왼쪽) + 저장된 날짜 목록(오른쪽)
        - 그래프: 왼쪽 지표 목록 + 화면 높이를 채우는 그래프
        - 설정: 지표 목록 세 단
        - 창은 아래에서 올라오는 시트 대신 가운데 창
+       높이 500 미만(폰을 가로로 돌린 화면)은 뺀다 — 2026-11-14, 그전엔 폰 가로에도 걸려 최근값 판이 전부 잘렸다.
        이 블록은 스타일 맨 끝에 둔다 */
-    @media (min-width: 900px) and (orientation: landscape) {
+    @media (min-width: 900px) and (orientation: landscape) and (min-height: 500px) {
       :root { --rail-w: 92px; --header-h: 60px; }
 
-      #header { left: var(--rail-w); padding: 0 28px; }
+      #header { left: var(--rail-w); padding: 0 20px 0 28px; }
       #header h1 { font-size: 19px; }
       #btn-sync-open { font-size: 22px; padding: 6px 10px; }
 
@@ -454,7 +377,7 @@ html, body { overscroll-behavior-y: none; }
       .tab-btn.active { background: var(--primary-light); }
 
       .card { padding: 20px; border-radius: 14px; }
-      .card-title { font-size: 13px; margin-bottom: 12px; }
+      .card-title { font-size: 13px; }
 
       /* ── 데이터 탭: 최근값 판 | 저장된 날짜 ── */
       #tab-data.active {
@@ -472,29 +395,19 @@ html, body { overscroll-behavior-y: none; }
         grid-column: 1; grid-row: 1 / span 2;
         margin-bottom: 0; min-height: 0;
       }
-      .latest-asof { font-weight: 500; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+      .latest-head { margin-bottom: 4px; }
+      .latest-note { font-size: 13px; margin-bottom: 10px; }
       .latest-grid {
         flex: 1;
-        display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));   /* 23칸 = 5줄 (4단이면 6줄이라 넘쳤다) */
+        grid-template-columns: repeat(5, minmax(0, 1fr));   /* 다섯 단 (4단이면 줄이 늘어 넘쳤다) */
         grid-auto-rows: minmax(0, 1fr);
         min-height: 0;
         gap: 10px;
       }
-      .lt-item {
-        display: flex; flex-direction: column; justify-content: center; gap: 2px;
-        min-height: 0; overflow: hidden;
-        padding: 8px 14px; text-align: left;
-        background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
-        font-family: inherit; color: var(--text); cursor: pointer;
-      }
-      .lt-item:active { background: var(--primary-light); }
-      .lt-name { font-size: 13px; font-weight: 600; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .lt-val { font-size: 21px; font-weight: 700; }
-      .lt-chg { font-size: 13px; font-weight: 600; color: var(--text-muted); }
-      .lt-chg.up { color: #dc2626; }
-      .lt-chg.down { color: #2563eb; }
-      .lt-date { font-weight: 400; margin-left: 6px; color: var(--text-muted); font-size: 11px; }
+      .lt-item { padding: 6px 14px; }
+      .lt-name { font-size: 13px; }
+      .lt-val { font-size: 21px; }
+      .lt-chg { font-size: 13px; }
 
       #tab-data .backup-row { grid-column: 2; grid-row: 1; margin-bottom: 12px; }
       .btn-backup { padding: 13px 8px; font-size: 14px; }
@@ -502,7 +415,8 @@ html, body { overscroll-behavior-y: none; }
         grid-column: 2; grid-row: 2;
         display: flex; flex-direction: column; min-height: 0; margin-bottom: 0;
       }
-      #entry-list { flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; }
+      #btn-toggle-dates { display: none; }
+      #entry-list, #entry-list.collapsed { display: flex; flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px; }
       .entry-item { padding: 12px 16px; }
       .entry-date { font-size: 15px; }
       .entry-count { font-size: 13px; }
@@ -545,49 +459,37 @@ html, body { overscroll-behavior-y: none; }
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
       .picker-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 700; }
-      #chart-area { display: flex; flex-direction: column; min-height: 0; }
-      .chart-card { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 20px 24px; border-radius: 14px; }
+      #chart-area { flex: 1 1 auto; min-height: 0; }
+      .chart-card { flex: 1 1 auto; min-height: 0; padding: 18px 24px; border-radius: 14px; }
       .latest-num { font-size: 34px; }
       .latest-label { font-size: 15px; }
-      .peak-row { padding: 9px 14px; }
+      .peak-row { padding: 8px 14px; }
       .peak-label, .peak-date { font-size: 13px; }
       .peak-val { font-size: 17px; }
       .peak-diff { font-size: 14px; }
-      .chart-canvas-wrap { flex: 1; position: relative; height: auto; min-height: 240px; }
-      .chart-canvas-wrap canvas { position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
-      #btn-reset-zoom { font-size: 13px; padding: 7px 16px; }
+      .chart-canvas-wrap { min-height: 240px; }
       .chart-hint { font-size: 12px; }
       .no-chart { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--card); border-radius: 14px; }
 
       /* ── 설정: 지표 목록 세 단 (위→아래로 읽고 옆 단으로), 남는 높이를 나눠 갖는다 ── */
-      #tab-settings > .card { flex: 1; display: flex; flex-direction: column; margin-bottom: 0; }
-      .settings-info { font-size: 14px; }
-      .btn-settings-add { max-width: 420px; padding: 13px; font-size: 15px; }
+      #tab-settings > .card { flex: 1; display: flex; flex-direction: column; margin-bottom: 0; min-height: 0; }
+      .settings-info { font-size: 14px; margin: 4px 0 10px; }
       #settings-indicator-list {
-        flex: 1;
+        flex: 1; min-height: 0;
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        grid-template-rows: repeat(var(--rows, 8), minmax(48px, 1fr));
+        grid-template-rows: repeat(var(--rows, 9), minmax(0, 1fr));
         grid-auto-flow: column;
-        gap: 8px 16px;
+        gap: 6px 16px;
       }
-      .settings-row { margin-bottom: 0; padding: 7px 12px; }
-      .settings-row .ind-name { font-size: 15px; }
-      .settings-row .btn-move, .settings-row .btn-del { width: 38px; height: 36px; font-size: 15px; }
-      .btn-settings-reset { max-width: 420px; margin-left: auto; margin-right: auto; display: block; }
+      .settings-row { margin-bottom: 0; padding: 4px 12px; min-height: 0; }
+      .settings-row .ind-name { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .btn-settings-reset { max-width: 420px; margin: 10px auto 0; display: block; }
 
       /* ── 창: 가운데 ── */
       .modal-backdrop { align-items: center; padding-left: var(--rail-w); }
-      .modal { max-width: 560px; border-radius: 24px; padding: 24px 24px 28px; animation: fadeIn .2s ease; }
+      .modal { max-width: 520px; border-radius: 24px; padding: 24px 24px 26px; animation: fadeIn .2s ease; }
       .modal-title { font-size: 20px; }
-      .modal-close { width: 36px; height: 36px; }
-      #sync-key-input {
-        width: 100%; padding: 11px 12px;
-        border: 1px solid var(--border); border-radius: 8px;
-        font-size: 16px; background: var(--bg); color: var(--text);
-      }
-      .sync-btn-row { grid-template-columns: 1fr; }
-      .btn-sync-down { padding: 14px 8px; font-size: 15px; }
 
       #toast { bottom: 32px; left: calc(50% + var(--rail-w) / 2); }
     }
@@ -595,7 +497,8 @@ html, body { overscroll-behavior-y: none; }
 
     /* 태블릿을 세로로 세웠을 때 — 폰 배치 그대로, 폭만 넓힌다 */
     @media (min-width: 700px) and (orientation: portrait) {
-      .tab-content > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+      .tab-content > * { width: 100%; max-width: 760px; margin-left: auto; margin-right: auto; }
+      #tab-table > * { max-width: none; }
     }
   </style>
 </head>
@@ -604,37 +507,41 @@ html, body { overscroll-behavior-y: none; }
 <!-- HEADER -->
 <header id="header">
   <h1>📊 투자 지표 트래커</h1>
-  <button id="btn-sync-open" title="동기화 설정">☁️<span class="sync-dot" id="sync-dot"></span></button>
+  <button id="btn-sync-open" title="받기 상태" aria-label="받기 상태">☁️<span class="sync-dot" id="sync-dot"></span></button>
 </header>
 
 <!-- MAIN -->
 <div id="main">
 
-  <!-- DATA TAB (2026-10-12까지 홈 탭 — 첫 화면을 표로 바꾸며 이름을 바꿈) -->
+  <!-- DATA TAB — 앱은 받기 전용이다(2026-09-03). 기록은 자동 수집(GitHub Actions)만 쓰고 앱은 서버에서 받기만 한다 -->
   <div id="tab-data" class="tab-content">
-    <!-- 2026-09-03: 앱은 읽기 전용이다. 직접 입력·복원·삭제 버튼을 뺐다.
-         기록은 GitHub Actions(collect.js)만 쓰고, 앱은 클라우드에서 받기만 한다.
-         값을 고칠 일이 있으면 Actions의 --only 실행이나 Claude가 클라우드 문서를 그 날짜만 고친다. -->
-    <!-- 태블릿 가로 전용 (2026-09-28): 지표별 최근값 판. 폰에서는 CSS로 숨긴다 -->
-    <div class="card home-latest" id="home-latest"></div>
+    <!-- 최근값 판: 지표마다 가장 최근 값과, 고른 시점(전일·1주·1개월·3개월·1년) 대비 변화.
+         태블릿 가로엔 2026-09-28부터 있었고, 2026-11-14부터 폰·폴드에도 보인다(칸 크기는 폰 글자 그대로) -->
+    <div class="card home-latest" id="home-latest">
+      <div class="latest-head">
+        <div class="card-title">최근값 <span class="latest-asof" id="latest-asof"></span></div>
+        <div class="seg" id="cmp-seg" role="group" aria-label="견줄 시점">
+          <button type="button" data-p="d">전일</button><button type="button" data-p="w">1주</button><button type="button" data-p="m">1개월</button><button type="button" data-p="q">3개월</button><button type="button" data-p="y">1년</button>
+        </div>
+      </div>
+      <div class="latest-note" id="latest-note"></div>
+      <div class="latest-grid" id="latest-grid"></div>
+    </div>
     <div class="backup-row">
       <button class="btn-backup" id="btn-backup">💾 백업 (내보내기)</button>
     </div>
-    <div class="card">
+    <div class="card" id="records-card">
       <div class="card-title">저장된 데이터</div>
-      <div class="entry-list" id="entry-list">
-        <div class="empty-state">
-          <div class="big">📈</div>
-          <p>아직 데이터가 없습니다.<br>☁️에서 동기화 키로 클라우드 데이터를 받아오세요.</p>
-        </div>
-      </div>
+      <p class="records-summary" id="records-summary"></p>
+      <button type="button" class="btn-toggle" id="btn-toggle-dates">날짜 목록 보기</button>
+      <div class="entry-list collapsed" id="entry-list"></div>
     </div>
   </div>
 
   <!-- TABLE TAB -->
   <div id="tab-table" class="tab-content active">
     <div class="table-wrap" id="table-wrap">
-      <div class="no-data">데이터가 없습니다.<br>☁️에서 클라우드 데이터를 받아오세요.</div>
+      <div class="no-data">기록을 받는 중입니다…</div>
     </div>
   </div>
 
@@ -643,10 +550,8 @@ html, body { overscroll-behavior-y: none; }
     <!-- 태블릿 가로 전용 (2026-09-28): 드롭다운 대신 왼쪽 지표 목록. 폰에서는 CSS로 숨긴다 -->
     <div class="ind-picker" id="ind-picker"></div>
     <div class="select-wrap">
-      <label>지표</label>
-      <select id="indicator-select">
-        <option value="">-- 지표를 선택하세요 --</option>
-      </select>
+      <label for="indicator-select">지표</label>
+      <select id="indicator-select"></select>
     </div>
     <div id="chart-area">
       <div class="no-chart">지표를 선택하면 그래프가 표시됩니다.</div>
@@ -656,11 +561,10 @@ html, body { overscroll-behavior-y: none; }
   <!-- SETTINGS TAB -->
   <div id="tab-settings" class="tab-content">
     <div class="card">
-      <div class="card-title">지표 관리</div>
-      <p class="settings-info">입력 양식, 표, 그래프에서 사용하는 지표를 관리합니다.<br>↑↓ 버튼으로 순서를 바꿀 수 있습니다.</p>
-      <button class="btn-settings-add" id="btn-settings-add">+ 새 지표 추가</button>
+      <div class="card-title">지표 순서 · 숨기기</div>
+      <p class="settings-info">표·최근값·그래프에 보이는 지표의 순서와 숨김을 <b>이 기기에서만</b> 바꿉니다. ⋮⋮ 를 끌거나 ↑↓ 로 옮기고, 「숨김」으로 감춥니다.<br>어떤 지표를 모을지는 자동 수집이 정합니다(새 지표는 저절로 나타납니다).</p>
       <div id="settings-indicator-list"></div>
-      <button class="btn-settings-reset" id="btn-settings-reset">기본값으로 초기화</button>
+      <button class="btn-settings-reset" id="btn-settings-reset">기본 순서로 되돌리기 (숨김도 풀기)</button>
     </div>
   </div>
 
@@ -674,71 +578,21 @@ html, body { overscroll-behavior-y: none; }
   <button class="tab-btn" data-tab="settings"><span class="icon">⚙️</span>설정</button>
 </nav>
 
-<!-- SYNC MODAL -->
+<!-- 상태 창 (☁️) — 2026-11-14: 동기화 키 칸·연결 해제를 없앴다. 앱은 늘 매일 수집되는 문서 하나(sync/0000)를 받는다 -->
 <div class="modal-backdrop" id="modal-sync">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">☁️ 동기화 설정</div>
-      <button class="modal-close" id="close-sync">✕</button>
+      <div class="modal-title">☁️ 받기 상태</div>
+      <button class="modal-close" id="close-sync" aria-label="닫기">✕</button>
     </div>
-    <p class="sync-info">동기화 키를 넣으면 클라우드의 기록을 받아오고, 이후 새 기록이 들어올 때마다 자동으로 갱신됩니다.<br>이 앱은 <b>받기 전용</b>입니다. 기록은 매일 아침 자동 수집(GitHub Actions)이 넣습니다.</p>
-    <!-- 2026-09-03: 올리기(이 기기 → 클라우드)와 로그인을 뺐다. 기기의 낡은 데이터로 클라우드
-         전체를 덮어쓰는 사고를 막기 위해서다. 서버 규칙도 앱 계정의 쓰기를 거부한다. -->
-    <div class="form-row">
-      <label>동기화 키</label>
-      <input type="text" id="sync-key-input" placeholder="예) kim2024 (영문/숫자)">
+    <div class="sync-state"><span class="sync-dot" id="sync-dot-modal"></span><span id="sync-status-text">연결 전</span></div>
+    <div class="sync-detail" id="sync-detail"></div>
+    <div class="sync-rows" id="sync-rows"></div>
+    <div class="sync-actions">
+      <button class="btn-main" id="btn-sync-refresh">다시 받기</button>
+      <button class="btn-main warn" id="btn-sync-force" hidden>줄어든 서버 기록을 그래도 받기</button>
     </div>
-    <div id="sync-status-row">
-      상태: <span id="sync-status-text">미연결</span>
-      <span class="sync-dot" id="sync-dot-modal"></span>
-    </div>
-    <div class="sync-btn-row">
-      <button class="btn-sync-down" id="btn-sync-download">⬇️ 클라우드 → 이 기기<span>클라우드 데이터를 받음</span></button>
-    </div>
-    <button id="btn-sync-disconnect">연결 해제</button>
-  </div>
-</div>
-
-<!-- ENTRY MODAL -->
-<div class="modal-backdrop" id="modal-add">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title">📝 지표 입력</div>
-      <button class="modal-close" id="close-add">✕</button>
-    </div>
-
-    <div class="form-row">
-      <label>날짜</label>
-      <input type="date" id="entry-date">
-    </div>
-
-    <!-- 동적으로 렌더링되는 지표 필드 -->
-    <div id="entry-fields-container"></div>
-
-    <!-- (구버전 데이터 호환용) 설정에 없는 지표가 있는 날짜를 편집할 때 표시 -->
-    <div class="custom-fields" id="custom-fields"></div>
-
-    <button id="btn-save-entry">💾 저장</button>
-  </div>
-</div>
-
-<!-- ADD INDICATOR MODAL -->
-<div class="modal-backdrop" id="modal-add-indicator">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title">➕ 새 지표 추가</div>
-      <button class="modal-close" id="close-add-indicator">✕</button>
-    </div>
-    <div class="form-row">
-      <label>지표명</label>
-      <input type="text" id="new-ind-name" placeholder="예) 일본 닛케이">
-    </div>
-    <div class="form-row">
-      <label>입력 예시 (선택)</label>
-      <input type="text" id="new-ind-placeholder" placeholder="예) 38900.5">
-    </div>
-    <p class="settings-info" style="margin: 4px 0 12px;">추가된 지표는 목록 맨 아래에 추가됩니다. 순서는 ↑↓ 버튼으로 조정하세요.</p>
-    <button class="btn-settings-add-confirm" id="btn-add-indicator-confirm">추가</button>
+    <p class="sync-info">이 앱은 <b>받기 전용</b>입니다. 기록은 평일 아침 10:37쯤 자동 수집이 넣고, 앱은 열 때마다 새 기록을 받아옵니다.<br><span id="app-ver"></span></p>
   </div>
 </div>
 
@@ -746,419 +600,213 @@ html, body { overscroll-behavior-y: none; }
 <div id="toast"></div>
 
 <script>
-const STORAGE_KEY = 'invest_tracker_v2';
-const INITIAL_DATA_VER = 'v4'; // 기본 데이터 버전 — 올리면 localStorage 강제 재로드
+'use strict';
+const APP_VER = 'v30 · 2026-11-14';
 
-// 그룹 이모지
-const GROUP_EMOJI = {
-  '금리': '📉',
-  '환율': '💱',
-  '주가지수': '📊',
-  '원자재': '🪙',
-  '가상자산/주식': '₿',
-  '기타': '📌',
+// ── 저장 칸 (이 기기의 localStorage) ──────────────────────────────────
+const K = {
+  data: 'invest_tracker_v2',                 // 서버 기록의 사본 { 'YYYY-MM-DD': { 지표: 값 } } — 끊긴 채로도 이것으로 연다
+  meta: 'invest_meta_v1',                    // { updatedAt, receivedAt, dropped } — 상태 창에 보일 것
+  serverInds: 'invest_indicators_server_v1', // 서버가 준 지표 목록(이름·묶음·순서·표기) 원문
+  order: 'invest_order_v1',                  // 이 기기에서 바꾼 순서 (이름 배열). 없으면 서버 순서
+  hidden: 'invest_hidden_v1',                // 이 기기에서 숨기거나 다시 보이게 한 지표 { 이름: true|false }
+  last: 'invest_last_indicator',             // 그래프에서 마지막에 본 지표
+  range: 'invest_graph_range',               // 그래프 기간 (1m·3m·1y·all)
+  cmp: 'invest_compare_period',              // 최근값 판에서 견줄 시점 (d·w·m·q·y)
+  migrated: 'invest_settings_v3',            // 옛 설정 칸을 옮겼다는 표시
+};
+// 2026-11-14 전의 칸. 한 번 옮기고 지운다(migrateOldSettings). 옛 주소에서 넘어올 때도 이 모양으로 온다(#move=)
+const OLD_INDS = 'invest_indicators_v1', OLD_REMOVED = 'invest_indicators_removed_v1';
+const OLD_KEYS = [OLD_INDS, OLD_REMOVED, 'invest_sync_key', 'invest_sync_off', 'invest_tracker_v2_ver', 'gold_recalc_troy_v1'];
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} },
+  json(k, fallback) { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? fallback : v; } catch (e) { return fallback; } },
 };
 
-// 기본 지표 정의 (사용자 설정이 없을 때 사용)
+// ── 지표 ──────────────────────────────────────────────────────────────
+// 목록의 원본은 서버 문서의 indicators 칸이다(수집 스크립트 collect.js 가 적는다 — 2026-11-14). 그래서 지표를 더해도
+// 기기마다 손볼 것이 없다. 아래는 그 칸을 아직 못 받았을 때(처음 깐 기기가 끊겨 있을 때 등) 쓰는 같은 내용의 사본이다.
+//   point  금리처럼 이미 %인 값 — 변화를 %p 로 적고, 그 소수 자릿수
+//   digits 기록 자릿수 그대로 보일 고정 자릿수
+//   nochg  표에서 변화 줄을 달지 않는다 (계산값 — 2026-10-12·15 사용자 요청)
+//   ratio  저장하지 않고 두 지표로 그때그때 계산하는 값 [분자, 분모]
 const DEFAULT_INDICATORS = [
-  { id: 'f-kr3',       name: '국채 3년',    group: '금리',          placeholder: '예) 3.502' },
-  { id: 'f-kr10',      name: '국채10년',    group: '금리',          placeholder: '예) 3.820' },
-  { id: 'f-us2',       name: '미국채 2년',  group: '금리',          placeholder: '예) 3.845' },
-  { id: 'f-us10',      name: '미국채 10년', group: '금리',          placeholder: '예) 4.338' },
-  { id: 'f-us30',      name: '미국채 30년', group: '금리',          placeholder: '예) 5.320' },
-  { id: 'f-usd',       name: '원달러환율',  group: '환율',          placeholder: '예) 1497.9' },
-  { id: 'f-dxy',       name: '달러인덱스',  group: '환율',          placeholder: '예) 99.29' },
-  { id: 'f-kospi',     name: '코스피지수',  group: '주가지수',      placeholder: '예) 5638.20' },
-  { id: 'f-kosdaq',    name: '코스닥지수',  group: '주가지수',      placeholder: '예) 1134.16' },
-  { id: 'f-nasdaq',    name: '나스닥',      group: '주가지수',      placeholder: '예) 21995.78' },
-  { id: 'f-dow',       name: '다우존스',    group: '주가지수',      placeholder: '예) 45803.82' },
-  { id: 'f-sp500',     name: 'S&P500',     group: '주가지수',      placeholder: '예) 6574.96' },
-  { id: 'f-gold-intl', name: '국제 금',    group: '원자재',        placeholder: '예) 4331.5',  label: '국제 금 (USD/oz)' },
-  { id: 'f-gold-krw',  name: '금 환산',    group: '원자재',        placeholder: '자동계산',     label: '금 환산 (원/g)',
-    autoCalc: 'goldKrw', autoFormula: '= 국제금 × 환율 ÷ 31.1035' },
-  { id: 'f-gold-disc', name: '금 할인률',  group: '원자재',        placeholder: '자동계산',     label: '금 할인률 (%)',
-    autoCalc: 'goldDisc', autoFormula: '= (금환산 − 국내금) ÷ 금환산 × 100' },
-  { id: 'f-gold-kr',   name: '국내 금',    group: '원자재',        placeholder: '예) 209,980', label: '국내 금 (원/g)' },
-  { id: 'f-copper',    name: '구리',       group: '원자재',        placeholder: '예) 12081.74', label: '구리 (USD/MT)' },
-  { id: 'f-oil',       name: '원유',       group: '원자재',        placeholder: '예) 88.78',   label: '원유 (USD/배럴)' },
-  { id: 'f-btc',       name: '비트코인',   group: '가상자산/주식', placeholder: '예) 105404000', label: '비트코인 (원)' },
-  { id: 'f-samsung',   name: '삼성전자',   group: '가상자산/주식', placeholder: '예) 189500',    label: '삼성전자 (원)' },
-  { id: 'f-samsung-p', name: '삼성전자우', group: '가상자산/주식', placeholder: '예) 134700',    label: '삼성전자우 (원)' },
-  { id: 'f-samsung-r', name: '삼성우비율', group: '가상자산/주식', placeholder: '자동계산',
-    autoCalc: 'samsungRatio', autoFormula: '= 삼성전자우 ÷ 삼성전자' },
+  { name: '국채 3년',    group: '금리', unit: '%', point: 3 },
+  { name: '국채10년',    group: '금리', unit: '%', point: 3 },
+  { name: '미국채 2년',  group: '금리', unit: '%', point: 3 },
+  { name: '미국채 10년', group: '금리', unit: '%', point: 3 },
+  { name: '미국채 30년', group: '금리', unit: '%', point: 3 },
+  { name: '원달러환율',  group: '환율', unit: '원' },
+  { name: '달러인덱스',  group: '환율' },
+  { name: '코스피지수',  group: '주가지수' },
+  { name: '코스닥지수',  group: '주가지수' },
+  { name: '나스닥',      group: '주가지수' },
+  { name: '다우존스',    group: '주가지수' },
+  { name: 'S&P500',      group: '주가지수' },
+  { name: '국제 금',     group: '원자재', unit: 'USD/oz' },
+  { name: '금 환산',     group: '원자재', unit: '원/g', nochg: true, calc: '국제 금 × 환율 ÷ 31.1035' },
+  { name: '금 할인률',   group: '원자재', unit: '%', point: 2, digits: 2, nochg: true, calc: '(금 환산 − 국내 금) ÷ 금 환산 × 100' },
+  { name: '국내 금',     group: '원자재', unit: '원/g' },
+  { name: '구리',        group: '원자재', unit: 'USD/MT' },
+  { name: '원유',        group: '원자재', unit: 'USD/배럴' },
+  { name: '비트코인',    group: '가상자산/주식', unit: '원' },
+  { name: '삼성전자',    group: '가상자산/주식', unit: '원' },
+  { name: '삼성전자우',  group: '가상자산/주식', unit: '원' },
+  { name: '삼성우비율',  group: '가상자산/주식', digits: 4, nochg: true, calc: '삼성전자우 ÷ 삼성전자' },
+  { name: 'SK하이닉스',  group: '가상자산/주식', unit: '원' },
+  { name: '에이피알',    group: '가상자산/주식', unit: '원' },
+  { name: '에이피알/삼성전자',   group: '가상자산/주식', digits: 4, nochg: true, ratio: ['에이피알', '삼성전자'], calc: '에이피알 ÷ 삼성전자' },
+  { name: '에이피알/하이닉스',   group: '가상자산/주식', digits: 4, nochg: true, ratio: ['에이피알', 'SK하이닉스'], calc: '에이피알 ÷ SK하이닉스' },
 ];
+const GROUP_EMOJI = { '금리': '📉', '환율': '💱', '주가지수': '📊', '원자재': '🪙', '가상자산/주식': '₿', '기타': '📌' };
 
-const INDICATORS_STORAGE = 'invest_indicators_v1';
-const REMOVED_STORAGE = 'invest_indicators_removed_v1';
-
-// DEFAULT_INDICATORS에 나중에 더한 지표. 지표 목록은 기기별 localStorage에만 있고
-// 클라우드에 없어서, 기본값만 고치면 이미 쓰던 기기에는 나타나지 않는다.
-// 그래서 저장된 목록에 같은 자리로 끼워 넣어 준다.
-const ADDED_LATER = [
-  { after: '미국채 10년', name: '미국채 30년' },
-];
-
-function getRemovedIndicators() {
-  try { return JSON.parse(localStorage.getItem(REMOVED_STORAGE) || '[]'); } catch { return []; }
+// 서버가 준 목록은 모양을 확인하고 필요한 칸만 옮겨 담는다 (남이 고친 문서여도 화면·저장소에 엉뚱한 것이 들어가지 않게)
+function parseIndicatorList(raw) {
+  let a; try { a = JSON.parse(raw); } catch (e) { return null; }
+  if (!Array.isArray(a) || !a.length || a.length > 200) return null;
+  const str = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max;
+  const int = (v, max) => Number.isInteger(v) && v >= 0 && v <= max;
+  const out = [], seen = new Set();
+  for (const i of a) {
+    if (!i || typeof i !== 'object' || !str(i.name, 40) || seen.has(i.name)) continue;
+    const o = { name: i.name, group: str(i.group, 20) ? i.group : '기타' };
+    if (str(i.unit, 12)) o.unit = i.unit;
+    if (int(i.point, 6) && i.point > 0) o.point = i.point;
+    if (int(i.digits, 8)) o.digits = i.digits;
+    if (i.nochg === true) o.nochg = true;
+    if (i.hidden === true) o.hidden = true;
+    if (str(i.calc, 80)) o.calc = i.calc;
+    if (Array.isArray(i.ratio) && i.ratio.length === 2 && str(i.ratio[0], 40) && str(i.ratio[1], 40)) o.ratio = [i.ratio[0], i.ratio[1]];
+    seen.add(o.name); out.push(o);
+  }
+  return out.length ? out : null;
 }
-function rememberRemoved(name) {
-  const list = getRemovedIndicators();
-  if (!list.includes(name)) localStorage.setItem(REMOVED_STORAGE, JSON.stringify([...list, name]));
-}
 
-function getIndicators() {
-  try {
-    const raw = localStorage.getItem(INDICATORS_STORAGE);
-    if (!raw) return JSON.parse(JSON.stringify(DEFAULT_INDICATORS));
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) return JSON.parse(JSON.stringify(DEFAULT_INDICATORS));
-    // 구버전 수식 라벨 마이그레이션 (일반온스 → 트로이온스)
-    parsed.forEach(ind => {
-      if (ind.autoFormula && ind.autoFormula.includes('28.3495')) {
-        ind.autoFormula = ind.autoFormula.replace('28.3495', '31.1035');
-      }
+let _indCache = null;   // { base, list, byName } — 서버 목록·기록·이 기기 설정이 바뀌면 비운다
+function invalidateIndicators() { _indCache = null; _seriesCache = new Map(); }
+function indicators() {
+  if (_indCache) return _indCache;
+  const base = (parseIndicatorList(store.get(K.serverInds) || '') || DEFAULT_INDICATORS).map(i => Object.assign({}, i));
+  // 목록에 없는데 기록에는 있는 지표는 맨 뒤 「기타」로 (조용히 빠뜨리지 않는다)
+  const known = new Set(base.map(i => i.name));
+  for (const n of dataNames()) if (!known.has(n)) { base.push({ name: n, group: '기타' }); known.add(n); }
+  // 이 기기에서 바꾼 순서. 순서에 없는 지표(나중에 생긴 것)는 원래 목록에서 바로 앞에 있던 지표 뒤에 끼운다
+  let list = base;
+  const order = store.json(K.order, null);
+  if (Array.isArray(order) && order.length) {
+    const byName = new Map(base.map(i => [i.name, i])), seen = new Set();
+    list = order.filter(n => !seen.has(n) && seen.add(n)).map(n => byName.get(n)).filter(Boolean);   // 같은 이름이 두 번 적혀 있어도 한 번만
+    const placed = new Set(list);
+    base.forEach((ind, bi) => {
+      if (placed.has(ind)) return;
+      let at = 0;
+      for (let j = bi - 1; j >= 0; j--) { const k = list.indexOf(base[j]); if (k >= 0) { at = k + 1; break; } }
+      list.splice(at, 0, ind); placed.add(ind);
     });
-    // 나중에 더한 기본 지표를 저장된 목록에 끼워 넣는다.
-    // 사용자가 일부러 지운 것을 되살리지 않도록 '지운 지표' 목록과 대조한다.
-    const removed = getRemovedIndicators();
-    let grew = false;
-    ADDED_LATER.forEach(({ after, name }) => {
-      if (parsed.some(i => i.name === name) || removed.includes(name)) return;
-      const def = DEFAULT_INDICATORS.find(i => i.name === name);
-      if (!def) return;
-      const at = parsed.findIndex(i => i.name === after);
-      parsed.splice(at >= 0 ? at + 1 : parsed.length, 0, JSON.parse(JSON.stringify(def)));
-      grew = true;
-    });
-    if (grew) saveIndicators(parsed);
-    return parsed;
-  } catch {
-    return JSON.parse(JSON.stringify(DEFAULT_INDICATORS));
   }
+  const hid = store.json(K.hidden, {}) || {};
+  list.forEach(i => { i.off = (typeof hid[i.name] === 'boolean') ? hid[i.name] : !!i.hidden; });
+  _indCache = { list, byName: new Map(list.map(i => [i.name, i])) };
+  return _indCache;
 }
+const indOf = name => indicators().byName.get(name) || { name, group: '기타' };
+// 화면에 보이는 지표: 숨기지 않았고, 값이 한 번이라도 있는 것
+function shownIndicators() { return indicators().list.filter(i => !i.off && hasData(i)); }
 
-function saveIndicators(list) {
-  localStorage.setItem(INDICATORS_STORAGE, JSON.stringify(list));
+// ── 기록 ──────────────────────────────────────────────────────────────
+let DATA = {}, DATES = [], DATA_VER = 0, _rawLocal = null, _names = null;   // DATES 는 최신이 앞
+let _seriesCache = new Map();
+function setData(obj, raw) {
+  DATA = obj; DATES = Object.keys(obj).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+  _rawLocal = raw; _names = null; DATA_VER++; invalidateIndicators();
 }
-
-// 표/차트에서 사용할 지표 표시 순서 (이름 배열)
-function getFieldOrder() {
-  return getIndicators().map(i => i.name);
+function dataNames() {
+  if (!_names) { const s = new Set(); for (const d of DATES) for (const n of Object.keys(DATA[d])) s.add(n); _names = [...s]; }
+  return _names;
 }
-
-// ── 초기 데이터 로드 ─────────────────────────────────────────────────
-function initData() {
-  const existing = localStorage.getItem(STORAGE_KEY);
-  const loadedVer = localStorage.getItem(STORAGE_KEY + '_ver');
-
-  if (typeof INITIAL_DATA !== 'undefined' && loadedVer !== INITIAL_DATA_VER) {
-    // 새 버전 감지 → 기본 데이터 재로드. INITIAL_DATA에 없는 날짜(수동 입력)는 유지.
-    const userEntries = {};
-    if (existing) {
-      try {
-        const old = JSON.parse(existing);
-        Object.keys(old).forEach(d => { if (!INITIAL_DATA[d]) userEntries[d] = old[d]; });
-      } catch {}
+// 받은 기록에서 쓸 수 있는 것만 남긴다: 날짜 꼴의 키, 숫자인 값. 순서는 그대로 둔다(같은 기록이면 글자도 같게)
+function cleanPayload(parsed) {
+  const data = {}; let dropped = 0;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { data, dropped: 1 };
+  for (const [d, e] of Object.entries(parsed)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !e || typeof e !== 'object' || Array.isArray(e)) { dropped++; continue; }
+    const day = {};
+    for (const [n, v] of Object.entries(e)) {
+      if (typeof v === 'number' && Number.isFinite(v) && typeof n === 'string' && n.length > 0 && n.length <= 40) day[n] = v; else dropped++;
     }
-    const merged = { ...INITIAL_DATA, ...userEntries };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-    localStorage.setItem(STORAGE_KEY + '_ver', INITIAL_DATA_VER);
-    return merged;
+    data[d] = day;
   }
-  try { return JSON.parse(existing || '{}'); } catch { return {}; }
+  return { data, dropped };
 }
-
-// ── STORAGE ───────────────────────────────────────────────────────────
-// 탭을 옮길 때마다 250KB JSON을 다시 풀던 것을 원문이 같으면 재사용한다 (2026-09-28 — 탭 이동 멈춤).
-// 돌려준 객체를 고친 쪽은 반드시 saveData를 부르므로(그때 캐시도 바뀐다) 공유해도 된다
-let _dataRaw = null, _dataObj = {}, _dataVer = 0;
-function loadData() {
-  const raw = localStorage.getItem(STORAGE_KEY) || '{}';
-  if (raw !== _dataRaw) {
-    try { _dataObj = JSON.parse(raw); } catch { _dataObj = {}; }
-    _dataRaw = raw; _dataVer++;
+function loadLocal() {
+  const raw = store.get(K.data);
+  if (!raw) { setData({}, null); return; }
+  let parsed = null; try { parsed = JSON.parse(raw); } catch (e) {}
+  const { data, dropped } = cleanPayload(parsed);
+  setData(data, dropped ? JSON.stringify(data) : raw);
+}
+// 차트·변화 계산에서 건너뛸 값 (빈 값처럼 다룬다)
+function isOutlier(name, v) {
+  // 0은 빈 값으로 본다 — 단 금 할인률은 정확히 0인 날이 실제로 있다(2024-07-11·2025-04-01·2026-06-10, 10/20 점검)
+  if (v === 0 && name !== '금 할인률') return true;
+  if (name === '금 할인률' && (v > 50 || v < -50)) return true;
+  if (name === '금 환산' && v < 10000) return true;
+  return false;
+}
+// 지표의 날짜별 값 (DATES 와 같은 순서 — 최신이 앞). 비율 지표는 여기서 계산한다
+function series(ind) {
+  let s = _seriesCache.get(ind.name);
+  if (s) return s;
+  if (ind.ratio) {
+    const [a, b] = ind.ratio, dg = ind.digits != null ? ind.digits : 4;
+    s = DATES.map(d => { const e = DATA[d], x = e[a], y = e[b]; return (typeof x === 'number' && typeof y === 'number' && x !== 0 && y !== 0) ? +(x / y).toFixed(dg) : undefined; });
+  } else {
+    const n = ind.name;
+    s = DATES.map(d => DATA[d][n]);
   }
-  return _dataObj;
+  _seriesCache.set(ind.name, s);
+  return s;
 }
-function saveData(data) {
-  const raw = JSON.stringify(data);
-  localStorage.setItem(STORAGE_KEY, raw);
-  _dataRaw = raw; _dataObj = data; _dataVer++;
-}
-
-// ── TOAST ─────────────────────────────────────────────────────────────
-function showToast(msg, dur = 2500) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), dur);
+function hasData(ind) { return series(ind).some(v => v !== undefined); }
+const valid = (ind, v) => v !== undefined && !isOutlier(ind.name, v);
+// i 번째(포함)부터 옛날 쪽으로 가며 처음 만나는 쓸 수 있는 값
+function findFrom(ind, i, maxDate) {
+  const s = series(ind);
+  for (; i < s.length; i++) { if (maxDate && DATES[i] > maxDate) continue; if (valid(ind, s[i])) return { v: s[i], i }; }
+  return null;
 }
 
-// ── TABS ──────────────────────────────────────────────────────────────
-const TAB_ORDER = ['table', 'data', 'graph', 'settings'];   // 2026-10-12: 첫 화면이 표, 옛 홈은 데이터 탭
-
-function getActiveTab() {
-  return document.querySelector('.tab-btn.active')?.dataset.tab || 'table';
-}
-
-function switchTab(tab, swipeDir) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => {
-    c.classList.remove('active', 'swipe-right', 'swipe-left');
-  });
-  document.querySelector(`.tab-btn[data-tab="${tab}"]`).classList.add('active');
-  const content = document.getElementById('tab-' + tab);
-  content.classList.add('active');
-  if (swipeDir) content.classList.add(swipeDir);
-  if (tab === 'table') renderTable();
-  if (tab === 'graph') renderIndicatorSelect();
-  if (tab === 'settings') renderSettingsTab();
-}
-
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-});
-
-// ── 스와이프로 탭 전환 ──────────────────────────────────────────────
-let swipeStartX = 0, swipeStartY = 0;
-const mainEl = document.getElementById('main');
-
-mainEl.addEventListener('touchstart', e => {
-  swipeStartX = e.touches[0].clientX;
-  swipeStartY = e.touches[0].clientY;
-}, { passive: true });
-
-mainEl.addEventListener('touchend', e => {
-  const currentTab = getActiveTab();
-  // 차트 탭은 pan/zoom과 충돌하므로 스와이프 탭 전환 제외
-  if (currentTab === 'graph') return;
-  // 표 내부 가로 스크롤 영역은 제외
-  if (currentTab === 'table' && e.target.closest('.table-wrap')) return;
-
-  const dx = e.changedTouches[0].clientX - swipeStartX;
-  const dy = e.changedTouches[0].clientY - swipeStartY;
-  // 수평 이동이 70px 미만이거나 수직 이동이 더 크면 무시
-  if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-
-  const idx = TAB_ORDER.indexOf(currentTab);
-  if (dx < 0 && idx < TAB_ORDER.length - 1) {
-    // 왼쪽 스와이프 → 다음 탭 (오른쪽에서 들어옴)
-    switchTab(TAB_ORDER[idx + 1], 'swipe-right');
-  } else if (dx > 0 && idx > 0) {
-    // 오른쪽 스와이프 → 이전 탭 (왼쪽에서 들어옴)
-    switchTab(TAB_ORDER[idx - 1], 'swipe-left');
-  }
-}, { passive: true });
-
-// ── HOME ──────────────────────────────────────────────────────────────
-function renderHome() {
-  const data = loadData();
-  const dates = Object.keys(data).sort((a, b) => b.localeCompare(a));
-  const list = document.getElementById('entry-list');
-  renderLatest(data, dates);
-  if (dates.length === 0) {
-    list.innerHTML = `<div class="empty-state"><div class="big">📈</div><p>아직 데이터가 없습니다.<br>☁️에서 동기화 키로 클라우드 데이터를 받아오세요.</p></div>`;
-    return;
-  }
-  // 읽기 전용 (2026-09-03): 항목을 눌러도 편집 모달이 열리지 않고, 삭제 버튼도 없다.
-  list.innerHTML = dates.map(d => {
-    const count = Object.keys(data[d]).length;
-    return `<div class="entry-item">
-      <div><div class="entry-date">${escapeHtml(formatDate(d))}</div><div class="entry-count">지표 ${count}개</div></div>
-    </div>`;
-  }).join('');
-}
-
-// ── 태블릿 가로 (2026-09-28) ─────────────────────────────────────────
-// 폰 배치는 그대로 두고, 넓은 가로 화면에서만 쓰는 판(최근값 판·그래프 지표 목록)을 채운다.
-const TABLET_MQ = window.matchMedia('(min-width: 900px) and (orientation: landscape)');
-function isTablet() { return TABLET_MQ.matches; }
-// 돌리면 그래프 글자 크기·첫 지표 자동 선택을 다시 맞춘다
-TABLET_MQ.addEventListener?.('change', () => { if (getActiveTab() === 'graph') renderIndicatorSelect(); });
-
-// 금리 4종·금 할인률은 %p, 나머지는 변화율 %
-function isPointIndicator(name) {
-  const ind = getIndicators().find(i => i.name === name);
-  return (ind && ind.group === '금리') || name === '금 할인률';
-}
-// %p 지표의 변화 소수 자릿수 — 금리는 3자리로 기록되고 금 할인률은 2자리 (그 밖은 0 = %p 아님)
-function pointDigits(name) {
-  return !isPointIndicator(name) ? 0 : name === '금 할인률' ? 2 : 3;
-}
-
-// 데이터 탭: 지표마다 가장 최근 값과 그 직전 값 대비 변화
-function renderLatest(data, datesDesc) {
-  const box = document.getElementById('home-latest');
-  if (!box) return;
-  if (!datesDesc.length) { box.innerHTML = ''; return; }
-  const inds = getIndicators();
-  let html = `<div class="card-title">최근값 <span class="latest-asof">${formatDate(datesDesc[0])} 기준</span></div><div class="latest-grid">`;
-  inds.forEach(ind => {
-    let cur = null, curDate = null, prev = null;
-    for (const d of datesDesc) {
-      const raw = data[d][ind.name];
-      if (raw === undefined || raw === null) continue;
-      const v = parseFloat(raw);
-      if (isNaN(v) || isChartOutlier(ind.name, v)) continue;
-      if (cur === null) { cur = v; curDate = d; } else { prev = v; break; }
-    }
-    let chg = '', cls = '';
-    if (cur !== null && prev !== null) {
-      if (isPointIndicator(ind.name)) {
-        const p = pointDigits(ind.name);
-        const diff = +(cur - prev).toFixed(p);
-        chg = `${diff > 0 ? '+' : ''}${diff.toFixed(p)}%p`;
-        cls = diff > 0 ? 'up' : diff < 0 ? 'down' : '';
-      } else if (prev !== 0) {
-        const pct = (cur - prev) / prev * 100;
-        chg = `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`;
-        cls = pct > 0 ? 'up' : pct < 0 ? 'down' : '';
-      }
-    }
-    const stale = curDate && curDate !== datesDesc[0] ? `<span class="lt-date">${formatDate(curDate)}</span>` : '';
-    html += `<button class="lt-item" data-name="${escapeHtml(ind.name)}">
-      <span class="lt-name">${GROUP_EMOJI[ind.group] || '📌'} ${escapeHtml(ind.name)}</span>
-      <span class="lt-val">${cur !== null ? formatNum(cur) : '-'}</span>
-      <span class="lt-chg ${cls}">${chg || '&nbsp;'}${stale}</span>
-    </button>`;
-  });
-  box.innerHTML = html + '</div>';
-}
-
-// 최근값 칸을 누르면 그 지표 그래프로
-document.getElementById('home-latest').addEventListener('click', e => {
-  const btn = e.target.closest('.lt-item');
-  if (!btn) return;
-  switchTab('graph');
-  const sel = document.getElementById('indicator-select');
-  sel.value = btn.dataset.name;
-  if (sel.value) { renderChart(sel.value); markPicker(sel.value); }
-});
-
-// 그래프: 왼쪽 지표 목록 (그룹별)
-function renderPicker(names) {
-  const box = document.getElementById('ind-picker');
-  if (!box) return;
-  const inds = getIndicators();
-  const groups = {};
-  names.forEach(n => {
-    const g = (inds.find(i => i.name === n) || {}).group || '기타';
-    (groups[g] = groups[g] || []).push(n);
-  });
-  box.innerHTML = Object.entries(groups).map(([g, list]) =>
-    `<div class="picker-group"><div class="picker-title">${GROUP_EMOJI[g] || '📌'} ${escapeHtml(g)}</div>` +
-    list.map(n => `<button class="picker-btn" data-name="${escapeHtml(n)}">${escapeHtml(n)}</button>`).join('') +
-    `</div>`).join('');
-  markPicker(document.getElementById('indicator-select').value);
-}
-function markPicker(name) {
-  document.querySelectorAll('#ind-picker .picker-btn').forEach(b => b.classList.toggle('active', b.dataset.name === name));
-}
-document.getElementById('ind-picker').addEventListener('click', e => {
-  const btn = e.target.closest('.picker-btn');
-  if (!btn) return;
-  const sel = document.getElementById('indicator-select');
-  sel.value = btn.dataset.name;
-  renderChart(btn.dataset.name);
-  markPicker(btn.dataset.name);
-});
-
+// ── 표기 ──────────────────────────────────────────────────────────────
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 // MM-DD, YY 형식 (예: 03-24, 26)
-function formatDate(d) {
-  if (!d) return '';
-  const [y, m, day] = d.split('-');
-  return `${m}-${day}, ${y.slice(2)}`;
-}
-function formatDateShort(d) {
-  if (!d) return '';
-  const [y, m, day] = d.split('-');
-  return `${m}-${day}, ${y.slice(2)}`;
-}
-
-function deleteEntry(date) {
-  if (!confirm(`${formatDate(date)} 데이터를 삭제할까요?`)) return; // MM-DD, YY 형식
-  const data = loadData();
-  delete data[date];
-  saveData(data);
-  renderHome();
-  showToast('삭제되었습니다');
-}
-
-// ── TABLE ──────────────────────────────────────────────────────────────
-let _tableKey = '';
-// 표에서 변화 줄을 달지 않는 지표 (2026-10-12 사용자 요청 — 계산값이라 숫자만 본다)
-const NO_CHANGE_ROW = new Set(['금 환산', '금 할인률', '삼성우비율']); // 삼성우비율 2026-10-15 추가
-// limit: 최근 N일만 먼저 그린다 — 첫 화면이 표라 900일 × 23칸을 다 만들 때까지 기다리지 않게 (2026-10-12)
-function renderTable(limit) {
-  const data = loadData();
-  const key = _dataVer + '|' + getFieldOrder().join(',') + '|' + (limit || 'all');
-  if (key === _tableKey && document.querySelector('#table-wrap table')) return;
-  _tableKey = key;
-  const dates = Object.keys(data).sort((a, b) => b.localeCompare(a)); // 최신 날짜 왼쪽, 오래된 날짜 오른쪽
-  const wrap = document.getElementById('table-wrap');
-  if (dates.length === 0) {
-    wrap.innerHTML = '<div class="no-data">데이터가 없습니다.<br>☁️에서 클라우드 데이터를 받아오세요.</div>';
-    return;
-  }
-
-  // 순서: 설정 탭 지표 순 → 나머지 커스텀
-  const allSet = new Set();
-  dates.forEach(d => Object.keys(data[d]).forEach(n => allSet.add(n)));
-  const fieldOrder = getFieldOrder();
-  const ordered = fieldOrder.filter(n => allSet.has(n));
-  const extras = [...allSet].filter(n => !fieldOrder.includes(n));
-  const allIndicators = [...ordered, ...extras];
-
-  let html = '<table><thead><tr><th>지표</th>';
-  const shown = limit ? dates.slice(0, limit) : dates;
-  shown.forEach(d => { html += `<th>${formatDateShort(d)}</th>`; });
-  html += '</tr></thead><tbody>';
-  allIndicators.forEach(name => {
-    // 오래된 날부터 훑으며 칸마다 직전 기록값 대비 변화를 만든다 (빈 날·이상값은 건너뛴다)
-    const point = pointDigits(name);
-    const chg = {};
-    let prev = null;
-    for (let i = NO_CHANGE_ROW.has(name) ? -1 : dates.length - 1; i >= 0; i--) {
-      const raw = data[dates[i]][name];
-      if (raw === undefined || raw === null || raw === '') continue;
-      const v = parseFloat(raw);
-      if (isNaN(v) || isChartOutlier(name, v)) continue;
-      if (prev !== null) chg[dates[i]] = formatChange(v, prev, point);
-      prev = v;
-    }
-    html += `<tr><td>${escapeHtml(name)}</td>`;
-    shown.forEach(d => { html += `<td>${data[d][name] !== undefined ? escapeHtml(formatNum(data[d][name], name)) : '-'}${chg[d] || ''}</td>`; });
-    html += '</tr>';
-  });
-  html += '</tbody></table>';
-  wrap.innerHTML = html;
-  if (limit && dates.length > limit) setTimeout(() => { if (_tableKey === key) renderTable(); }, 400);
-}
-
+function fmtDate(d) { if (!d) return ''; const [y, m, day] = String(d).split('-'); return `${m}-${day}, ${String(y).slice(2)}`; }
+const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+const dowOf = d => DOW[new Date(d + 'T00:00:00Z').getUTCDay()];
+const pad2 = n => String(n).padStart(2, '0');
+function fmtStamp(ms) { if (!ms) return '-'; const t = new Date(ms); return `${pad2(t.getMonth() + 1)}-${pad2(t.getDate())} ${pad2(t.getHours())}:${pad2(t.getMinutes())}`; }
 const _NF = [
   new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 0 }),
   new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }),
   new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
   new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 3, maximumFractionDigits: 3 }),
-  new Intl.NumberFormat('ko-KR', { minimumFractionDigits: 4, maximumFractionDigits: 4 }),
 ];
-// 기록 자릿수 그대로 보이게: 금 할인률은 2자리("0.160" ✗), 삼성우비율은 4자리("0.787" ✗) (10/20 점검)
-const NUM_DIGITS = { '금 할인률': 2, '삼성우비율': 4 };
-function formatNum(n, name) {
-  if (n === undefined || n === null) return '-';
-  const num = parseFloat(n);
-  if (isNaN(num)) return n;
-  if (NUM_DIGITS[name] != null) return _NF[NUM_DIGITS[name]].format(num);
-  if (num >= 100000) return _NF[0].format(num);
-  if (num >= 1000)   return _NF[1].format(num);
-  if (num >= 10)     return _NF[2].format(num);
-  return _NF[3].format(num);
+const _NFD = new Map();
+function nfFixed(d) { let f = _NFD.get(d); if (!f) { f = new Intl.NumberFormat('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d }); _NFD.set(d, f); } return f; }
+// 기록 자릿수 그대로 보이게: 자릿수가 정해진 지표(금 할인률 2 · 삼성우비율 4 …)는 그대로, 나머지는 크기에 따라
+function fmtNum(n, ind) {
+  if (n === undefined || n === null || Number.isNaN(n)) return '-';
+  if (ind && ind.digits != null) return nfFixed(ind.digits).format(n);
+  if (n >= 100000) return _NF[0].format(n);
+  if (n >= 1000)   return _NF[1].format(n);
+  if (n >= 10)     return _NF[2].format(n);
+  return _NF[3].format(n);
 }
-
 // 표 칸 아래 줄: "-42.65 (4.78%)" 꼴. 금리·금 할인률은 차이만 %p로 (변화율은 오해를 부른다)
-function formatChange(cur, prev, point) {
-  // point는 %p 지표의 소수 자릿수(금리 3 · 금 할인률 2), 아니면 0. 반올림한 차이로 색을 정한다 —
-  // 금리를 2자리로 잘라 0.004 변화가 빨간 "+0.00%p"로 보였다 (10/20 점검 #9)
+function fmtChange(cur, prev, point) {
+  // 반올림한 차이로 색을 정한다 — 금리를 2자리로 잘라 0.004 변화가 빨간 "+0.00%p"로 보였다 (10/20 점검 #9)
   const diff = point ? +(cur - prev).toFixed(point) : cur - prev;
   const cls = diff > 0 ? 'up' : diff < 0 ? 'down' : '';
   const sign = diff > 0 ? '+' : diff < 0 ? '-' : '';
@@ -1173,496 +821,497 @@ function formatChange(cur, prev, point) {
   }
   return `<span class="chg ${cls}">${text}</span>`;
 }
-
-// ── GRAPH ──────────────────────────────────────────────────────────────
-let _graphKey = '';
-function renderIndicatorSelect() {
-  const data = loadData();
-  const gkey = _dataVer + '|' + getFieldOrder().join(',') + '|' + isTablet();
-  if (gkey === _graphKey && document.querySelector('#chart-area canvas')) return;
-  _graphKey = gkey;
-  const sel = document.getElementById('indicator-select');
-  const current = sel.value;
-
-  const allSet = new Set();
-  Object.values(data).forEach(e => Object.keys(e).forEach(k => allSet.add(k)));
-
-  // 순서: 설정 탭 지표 순 → 나머지
-  const fieldOrder = getFieldOrder();
-  const ordered = fieldOrder.filter(n => allSet.has(n));
-  const extras = [...allSet].filter(n => !fieldOrder.includes(n));
-  const allNames = [...ordered, ...extras];
-
-  sel.innerHTML = '<option value="">-- 지표를 선택하세요 --</option>';
-  allNames.forEach(name => {
-    const opt = document.createElement('option');
-    opt.value = name; opt.textContent = name;
-    if (name === current) opt.selected = true;
-    sel.appendChild(opt);
-  });
-  renderPicker(allNames);
-  if (current && allSet.has(current)) renderChart(current);
-  // 태블릿 가로에서는 빈 그래프 화면 대신 첫 지표를 바로 보여준다
-  else if (isTablet() && allNames.length) { sel.value = allNames[0]; renderChart(allNames[0]); markPicker(allNames[0]); }
+// 두 값의 차이를 한 덩어리로: 금리류는 %p, 나머지는 변화율 %. { text, cls }
+function fmtDelta(ind, cur, then, digits) {
+  if (ind.point) {
+    const d = +(cur - then).toFixed(ind.point);
+    return { text: `${d > 0 ? '+' : ''}${d.toFixed(ind.point)}%p`, cls: d > 0 ? 'up' : d < 0 ? 'down' : '' };
+  }
+  if (!then) return null;
+  const p = (cur - then) / Math.abs(then) * 100, r = +p.toFixed(digits);
+  return { text: `${r > 0 ? '+' : ''}${r.toFixed(digits)}%`, cls: r > 0 ? 'up' : r < 0 ? 'down' : '' };
 }
 
-document.getElementById('indicator-select').addEventListener('change', e => {
-  markPicker(e.target.value);
-  if (e.target.value) renderChart(e.target.value);
-  else document.getElementById('chart-area').innerHTML = '<div class="no-chart">지표를 선택하면 그래프가 표시됩니다.</div>';
+// ── TOAST ─────────────────────────────────────────────────────────────
+let _toastTimer = 0;
+function showToast(msg, dur = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), dur);
+}
+
+// ── 탭 · 뒤로 가기 ────────────────────────────────────────────────────
+const TAB_ORDER = ['table', 'data', 'graph', 'settings'];   // 2026-10-12: 첫 화면이 표, 옛 홈은 데이터 탭
+const HOME_TAB = 'table';
+const activeTab = () => (document.querySelector('.tab-btn.active') || {}).dataset?.tab || HOME_TAB;
+const isModalOpen = () => !!document.querySelector('.modal-backdrop.open');
+
+function showTab(tab, swipeDir) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active', 'swipe-right', 'swipe-left'));
+  const content = document.getElementById('tab-' + tab);
+  content.classList.add('active');
+  if (swipeDir) content.classList.add(swipeDir);
+  renderActive();
+}
+function renderActive() {
+  const tab = activeTab();
+  if (tab === 'table') renderTable();
+  if (tab === 'data') renderData();
+  if (tab === 'graph') renderGraphTab();
+  if (tab === 'settings') renderSettings();
+}
+
+/* 뒤로 가기 (2026-11-14) — 그전엔 다루지 않아, 창이 열려 있어도 뒤로 가기를 누르면 앱이 꺼졌다.
+   이제: 창이 열려 있으면 창을 닫고 → 표가 아닌 탭이면 표로 → 표면 앱에서 나간다.
+   기록에 쌓는 것은 둘뿐이다 — { k:'tab', tab } (표가 아닌 탭에 있음) 과 { k:'modal' } (창이 열림). 우리집 가계부와 같은 방식 */
+let ignorePop = 0;       // 우리가 부른 history.back() 이 일으킨 popstate 는 건너뛴다
+const navState = () => (history.state && history.state.inv) ? history.state : null;
+function pushNav(st)    { try { history.pushState(Object.assign({ inv: 1 }, st), ''); } catch (e) {} }
+function replaceNav(st) { try { history.replaceState(st ? Object.assign({ inv: 1 }, st) : null, ''); } catch (e) {} }
+function backNav() {
+  ignorePop++;
+  try { history.back(); } catch (e) { ignorePop = Math.max(0, ignorePop - 1); return; }
+  // popstate 가 끝내 오지 않으면(기록이 없던 경우) 다음 진짜 뒤로 가기를 먹지 않게 푼다
+  setTimeout(() => { if (ignorePop > 0) ignorePop = 0; }, 600);
+}
+// 기록의 맨 위와 지금 화면이 어긋났으면 맞춘다
+function reconcileNav() {
+  if (isModalOpen()) return;
+  const st = navState(), tab = activeTab();
+  if (st && st.k === 'tab') {
+    if (tab === HOME_TAB) backNav();
+    else if (st.tab !== tab) replaceNav({ k: 'tab', tab });
+  } else if (st && st.k === 'modal') {
+    backNav();
+  } else if (!st && tab !== HOME_TAB) {
+    pushNav({ k: 'tab', tab });
+  }
+}
+function goTab(tab, swipeDir) {
+  showTab(tab, swipeDir);
+  if (isModalOpen()) return;                 // 창이 닫히며 맞춰진다 (reconcileNav)
+  const cur = navState();
+  if (tab === HOME_TAB) {
+    if (cur && cur.k === 'tab') backNav();   // 쌓아 둔 탭 기록을 걷는다
+  } else if (cur && cur.k === 'tab') replaceNav({ k: 'tab', tab });
+  else pushNav({ k: 'tab', tab });
+}
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+  const cur = navState();
+  if (!(cur && cur.k === 'modal')) pushNav({ k: 'modal' });
+}
+function closeModal(fromPop) {
+  document.querySelectorAll('.modal-backdrop.open').forEach(m => m.classList.remove('open'));
+  if (fromPop) { reconcileNav(); return; }
+  const cur = navState();
+  if (cur && cur.k === 'modal') backNav();
+}
+window.addEventListener('popstate', () => {
+  if (ignorePop > 0) { ignorePop--; reconcileNav(); return; }
+  if (isModalOpen()) { closeModal(true); return; }   // 창이 열려 있으면 창만 닫는다
+  const st = navState();
+  showTab(st && st.k === 'tab' && TAB_ORDER.includes(st.tab) ? st.tab : HOME_TAB);
+});
+document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => goTab(btn.dataset.tab)));
+
+// ── 옆으로 밀어 탭 전환 ───────────────────────────────────────────────
+let swipeStartX = 0, swipeStartY = 0, swipeBlocked = false, sortDragging = false;
+const mainEl = document.getElementById('main');
+mainEl.addEventListener('touchstart', e => {
+  swipeStartX = e.touches[0].clientX;
+  swipeStartY = e.touches[0].clientY;
+  // 지표를 끌어 옮기는 손잡이·고르는 단추 묶음에서 시작한 손짓은 탭을 넘기지 않는다
+  // (2026-11-14 — 태블릿 설정에서 지표를 옆 단으로 끌어다 놓으면 그래프 탭으로 넘어갔다)
+  swipeBlocked = !!(e.target.closest && e.target.closest('.drag-handle, .seg'));
+}, { passive: true });
+mainEl.addEventListener('touchend', e => {
+  if (swipeBlocked || sortDragging || isModalOpen()) return;
+  const cur = activeTab();
+  // 차트 탭은 pan/zoom과 충돌하므로 스와이프 탭 전환 제외
+  if (cur === 'graph') return;
+  // 표 내부 가로 스크롤 영역은 제외
+  if (cur === 'table' && e.target.closest('.table-wrap')) return;
+  const dx = e.changedTouches[0].clientX - swipeStartX;
+  const dy = e.changedTouches[0].clientY - swipeStartY;
+  // 수평 이동이 70px 미만이거나 수직 이동이 더 크면 무시
+  if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  const idx = TAB_ORDER.indexOf(cur);
+  if (dx < 0 && idx < TAB_ORDER.length - 1) goTab(TAB_ORDER[idx + 1], 'swipe-right');   // 왼쪽으로 밀기 → 다음 탭
+  else if (dx > 0 && idx > 0) goTab(TAB_ORDER[idx - 1], 'swipe-left');                  // 오른쪽으로 밀기 → 이전 탭
+}, { passive: true });
+
+// ── 태블릿 가로 (2026-09-28) ─────────────────────────────────────────
+// 폰 배치는 그대로 두고, 넓은 가로 화면에서만 쓰는 배치를 얹는다. 폰을 가로로 돌린 화면(높이 500 미만)은 뺀다
+const TABLET_MQ = window.matchMedia('(min-width: 900px) and (orientation: landscape) and (min-height: 500px)');
+const isTablet = () => TABLET_MQ.matches;
+TABLET_MQ.addEventListener?.('change', () => { _graphKey = ''; _dataKey = ''; renderActive(); });
+
+// ── 표 ────────────────────────────────────────────────────────────────
+// 2026-11-14: 한 번에 최근 60일만 그리고, 오른쪽 끝에 가까워지면 60일씩 더 붙인다.
+// 그전엔 열자마자 926일 × 23줄(화면 요소 4만 1천 개)을 다 그리느라 0.5~3초 화면이 멈췄고, 기록이 늘수록 길어졌다
+const TABLE_CHUNK = 60;
+let _tableKey = '', _tbl = null, _tblRaf = 0;
+function tableKey() { return DATA_VER + '|' + indicators().list.map(i => i.name + (i.off ? '-' : '')).join(','); }
+function renderTable() {
+  const wrap = document.getElementById('table-wrap');
+  const key = tableKey();
+  if (key === _tableKey && wrap.querySelector('table')) return;
+  _tableKey = key;
+  if (!DATES.length) {
+    _tbl = null;
+    wrap.innerHTML = `<div class="no-data">${SYNC.status === 'connected' || SYNC.status === 'missing' ? '기록이 없습니다.' : '기록을 받는 중입니다…<br>인터넷에 연결되면 서버에서 받아옵니다.'}</div>`;
+    return;
+  }
+  const rows = shownIndicators().map(ind => {
+    const s = series(ind), chg = new Array(s.length);
+    if (!ind.nochg) {
+      // 오래된 날부터 훑으며 칸마다 직전 기록값 대비 변화를 만든다 (빈 날·이상값은 건너뛴다)
+      let prev = null;
+      for (let i = s.length - 1; i >= 0; i--) {
+        const v = s[i];
+        if (!valid(ind, v)) continue;
+        if (prev !== null) chg[i] = fmtChange(v, prev, ind.point || 0);
+        prev = v;
+      }
+    }
+    return { ind, s, chg };
+  });
+  _tbl = { rows, cols: 0 };
+  // 이름이 긴 비율 지표는 빗금 뒤에서 줄을 바꾼다 (첫 칸이 넓어지지 않게 — CSS .nm-br)
+  const nameHtml = n => esc(n).replace(/\//g, '/<span class="nm-br"></span>');
+  wrap.innerHTML = '<table><thead><tr><th>지표</th></tr></thead><tbody>' +
+    rows.map(r => `<tr><td>${nameHtml(r.ind.name)}</td></tr>`).join('') + '</tbody></table>';
+  wrap.scrollLeft = 0;
+  appendTableCols(TABLE_CHUNK);
+}
+function appendTableCols(n) {
+  const wrap = document.getElementById('table-wrap'), table = wrap.querySelector('table');
+  if (!_tbl || !table || _tbl.cols >= DATES.length) return;
+  const from = _tbl.cols, to = Math.min(DATES.length, from + n);
+  let head = '';
+  for (let i = from; i < to; i++) head += `<th>${esc(fmtDate(DATES[i]))}</th>`;
+  table.tHead.rows[0].insertAdjacentHTML('beforeend', head);
+  const trs = table.tBodies[0].rows;
+  _tbl.rows.forEach((r, ri) => {
+    let html = '';
+    for (let i = from; i < to; i++) { const v = r.s[i]; html += `<td>${v !== undefined ? esc(fmtNum(v, r.ind)) : '-'}${r.chg[i] || ''}</td>`; }
+    trs[ri].insertAdjacentHTML('beforeend', html);
+  });
+  _tbl.cols = to;
+}
+document.getElementById('table-wrap').addEventListener('scroll', () => {
+  if (_tblRaf || !_tbl) return;
+  _tblRaf = requestAnimationFrame(() => {
+    _tblRaf = 0;
+    const wrap = document.getElementById('table-wrap');
+    // 오른쪽 끝까지 화면 두 개 반 안쪽이면 더 붙인다
+    let guard = 0;
+    while (_tbl && _tbl.cols < DATES.length && wrap.scrollLeft + wrap.clientWidth * 2.5 > wrap.scrollWidth && guard++ < 6) appendTableCols(TABLE_CHUNK);
+  });
+}, { passive: true });
+
+// ── 데이터 탭: 최근값 판 ──────────────────────────────────────────────
+// 견줄 시점은 볼트 「현황.md」와 같은 식이다: 가장 최근 기록일에서 거슬러 올라가, 그 날짜 이전의 가장 가까운 기록값
+const CMP = { d: '전일', w: '1주', m: '1개월', q: '3개월', y: '1년' };
+function shiftDate(iso, p) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const t = p === 'w' ? Date.UTC(y, m - 1, d - 7) : p === 'm' ? Date.UTC(y, m - 2, d) : p === 'q' ? Date.UTC(y, m - 4, d) : Date.UTC(y - 1, m - 1, d);
+  return new Date(t).toISOString().slice(0, 10);
+}
+const cmpPeriod = () => { const p = store.get(K.cmp); return CMP[p] ? p : 'd'; };
+let _dataKey = '', _datesOpen = false;
+function renderData() {
+  const key = tableKey() + '|' + cmpPeriod() + '|' + isTablet() + '|' + _datesOpen;
+  if (key === _dataKey) return;
+  _dataKey = key;
+  renderLatest();
+  renderRecords();
+}
+function renderLatest() {
+  const p = cmpPeriod();
+  document.querySelectorAll('#cmp-seg button').forEach(b => b.classList.toggle('active', b.dataset.p === p));
+  const asof = document.getElementById('latest-asof'), note = document.getElementById('latest-note'), grid = document.getElementById('latest-grid');
+  if (!DATES.length) { asof.textContent = ''; note.textContent = ''; grid.innerHTML = '<div class="no-data" style="grid-column:1/-1;padding:24px">기록을 받는 중입니다…</div>'; return; }
+  const latest = DATES[0];
+  const target = p === 'd' ? null : shiftDate(latest, p);
+  asof.textContent = `${fmtDate(latest)} 기준`;
+  if (target) { const i = DATES.findIndex(d => d <= target); note.textContent = i < 0 ? `${CMP[p]} 전 기록이 없습니다` : `${CMP[p]} 전(${fmtDate(DATES[i])} 기록)과 견줌`; }
+  else note.textContent = '직전 기록일과 견줌';
+  let html = '';
+  for (const ind of shownIndicators()) {
+    const cur = findFrom(ind, 0);
+    let delta = null;
+    if (cur) {
+      const then = target ? findFrom(ind, cur.i + 1, target) : findFrom(ind, cur.i + 1);
+      if (then) delta = fmtDelta(ind, cur.v, then.v, 2);
+    }
+    const stale = cur && cur.i > 0 ? `<span class="lt-date">${esc(fmtDate(DATES[cur.i]))}</span>` : '';
+    html += `<button class="lt-item" data-name="${esc(ind.name)}">
+      <span class="lt-name">${GROUP_EMOJI[ind.group] || '📌'} ${esc(ind.name)}</span>
+      <span class="lt-val">${cur ? esc(fmtNum(cur.v, ind)) : '-'}</span>
+      <span class="lt-chg ${delta ? delta.cls : ''}">${delta ? esc(delta.text) : '&nbsp;'}${stale}</span>
+    </button>`;
+  }
+  grid.innerHTML = html;
+}
+function renderRecords() {
+  const sum = document.getElementById('records-summary'), list = document.getElementById('entry-list'), btn = document.getElementById('btn-toggle-dates');
+  if (!DATES.length) { sum.textContent = '아직 받은 기록이 없습니다.'; list.innerHTML = ''; btn.hidden = true; return; }
+  sum.textContent = `${DATES.length.toLocaleString()}일 · ${DATES[DATES.length - 1]} ~ ${DATES[0]}`;
+  btn.hidden = false;
+  const open = _datesOpen || isTablet();
+  btn.textContent = _datesOpen ? '날짜 목록 접기' : `날짜 목록 보기 (${DATES.length.toLocaleString()}일)`;
+  list.classList.toggle('collapsed', !_datesOpen);
+  // 926줄을 늘 그려 두지 않는다 — 펼쳤을 때(태블릿 가로는 늘 펴 둠)만
+  list.innerHTML = !open ? '' : DATES.map(d =>
+    `<div class="entry-item"><div><div class="entry-date">${esc(fmtDate(d))}</div><div class="entry-count">지표 ${Object.keys(DATA[d]).length}개</div></div></div>`).join('');
+}
+document.getElementById('cmp-seg').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  store.set(K.cmp, b.dataset.p); renderData();
+});
+document.getElementById('btn-toggle-dates').addEventListener('click', () => { _datesOpen = !_datesOpen; renderData(); });
+// 최근값 칸을 누르면 그 지표 그래프로
+document.getElementById('latest-grid').addEventListener('click', e => {
+  const btn = e.target.closest('.lt-item'); if (!btn) return;
+  store.set(K.last, btn.dataset.name);
+  _graphSel = btn.dataset.name;
+  goTab('graph');
+});
+// 백업 (내보내기) — 이 기기에 받아 둔 기록을 파일로
+document.getElementById('btn-backup').addEventListener('click', () => {
+  if (!DATES.length) { showToast('백업할 데이터가 없습니다.'); return; }
+  const now = new Date();
+  const filename = `투자지표_백업_${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}.json`;
+  const url = URL.createObjectURL(new Blob([JSON.stringify(DATA, null, 2)], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast(`✅ ${DATES.length}개 날짜 백업 완료`);
 });
 
-// 차트에서 표시하지 않을 이상값 판별
-function isChartOutlier(name, v) {
-  // 0은 빈 값으로 본다 — 단 금 할인률은 정확히 0인 날이 실제로 있다(2024-07-11·2025-04-01·2026-06-10, 10/20 점검)
-  if (v === 0 && name !== '금 할인률') return true;
-  if (name === '금 할인률' && (v > 50 || v < -50)) return true;
-  if (name === '금 환산' && v < 10000) return true;
-  return false;
+// ── 그래프 ────────────────────────────────────────────────────────────
+const RANGES = { '1m': '1개월', '3m': '3개월', '1y': '1년', all: '전체' };
+const graphRange = () => { const r = store.get(K.range); return RANGES[r] ? r : 'all'; };
+let _graphKey = '', _graphSel = '', chartInstance = null, _chartDates = [];
+function renderGraphTab() {
+  const list = shownIndicators();
+  const gkey = tableKey() + '|' + isTablet() + '|' + _graphSel;
+  if (gkey === _graphKey && document.querySelector('#chart-area canvas')) return;
+  const sel = document.getElementById('indicator-select');
+  // 고를 지표: 방금 고른 것 → 마지막에 본 것 → 목록의 첫 지표 (2026-11-14 — 폰에서는 열 때마다 빈 화면에서 골라야 했다)
+  const names = list.map(i => i.name);
+  let cur = [_graphSel, sel.value, store.get(K.last)].find(n => n && names.includes(n)) || names[0] || '';
+  sel.innerHTML = '';
+  for (const n of names) { const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o); }
+  sel.value = cur;
+  _graphSel = cur;
+  _graphKey = tableKey() + '|' + isTablet() + '|' + _graphSel;
+  renderPicker(list);
+  if (cur) renderChart(cur);
+  else document.getElementById('chart-area').innerHTML = '<div class="no-chart">기록을 받으면 그래프가 표시됩니다.</div>';
 }
+function pickIndicator(name) {
+  _graphSel = name; store.set(K.last, name);
+  document.getElementById('indicator-select').value = name;
+  markPicker(name);
+  _graphKey = tableKey() + '|' + isTablet() + '|' + _graphSel;
+  renderChart(name);
+}
+document.getElementById('indicator-select').addEventListener('change', e => { if (e.target.value) pickIndicator(e.target.value); });
+// 태블릿 가로: 왼쪽 지표 목록 (묶음별)
+function renderPicker(list) {
+  const box = document.getElementById('ind-picker');
+  const groups = new Map();
+  for (const i of list) { if (!groups.has(i.group)) groups.set(i.group, []); groups.get(i.group).push(i.name); }
+  box.innerHTML = [...groups].map(([g, names]) =>
+    `<div class="picker-group"><div class="picker-title">${GROUP_EMOJI[g] || '📌'} ${esc(g)}</div>` +
+    names.map(n => `<button class="picker-btn" data-name="${esc(n)}">${esc(n)}</button>`).join('') + `</div>`).join('');
+  markPicker(_graphSel);
+}
+function markPicker(name) {
+  document.querySelectorAll('#ind-picker .picker-btn').forEach(b => b.classList.toggle('active', b.dataset.name === name));
+}
+document.getElementById('ind-picker').addEventListener('click', e => {
+  const btn = e.target.closest('.picker-btn'); if (btn) pickIndicator(btn.dataset.name);
+});
 
-let chartInstance = null;
 function renderChart(name) {
-  const data = loadData();
-  const allDates = Object.keys(data).sort((a, b) => a.localeCompare(b));
-  // 해당 지표의 데이터가 처음 시작되는 날짜부터만 표시
-  const firstIdx = allDates.findIndex(d => {
-    const v = data[d][name];
-    return v !== undefined && !isChartOutlier(name, parseFloat(v));
-  });
-  const dates = firstIdx === -1 ? allDates : allDates.slice(firstIdx);
-  const values = dates.map(d => {
-    const v = data[d][name];
-    if (v === undefined) return null;
-    const num = parseFloat(v);
-    return isChartOutlier(name, num) ? null : num;
-  });
-  const validVals = values.filter(v => v !== null);
-  const latestVal = validVals[validVals.length - 1];
-
-  document.getElementById('chart-area').innerHTML = `
-    <div class="chart-card">
-      <div class="latest-val">
-        <span class="latest-num">${latestVal !== undefined ? formatNum(latestVal) : '-'}</span>
-        <span class="latest-label">최근값</span>
-      </div>
-      <div class="peak-row" id="peak-row">
-        <span class="peak-label">🏆 기간 최고</span>
-        <span class="peak-val" id="peak-val">-</span>
-        <span class="peak-date" id="peak-date"></span>
-        <span class="peak-diff" id="peak-diff"></span>
-      </div>
-      <div class="chart-canvas-wrap">
-        <canvas id="my-chart"></canvas>
-      </div>
-      <button id="btn-reset-zoom">🔄 전체보기</button>
-      <p class="chart-hint">📱 핀치: 확대/축소 &nbsp;|&nbsp; 드래그: 이동</p>
-    </div>`;
-
+  const area = document.getElementById('chart-area');
   if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-
+  if (typeof Chart === 'undefined') {   // 라이브러리(defer)가 아직 안 왔거나 못 받았다 — 곧 다시 해 본다
+    area.innerHTML = '<div class="no-chart">그래프를 준비하는 중입니다…</div>';
+    setTimeout(() => { if (activeTab() === 'graph' && !chartInstance && typeof Chart !== 'undefined') renderChart(_graphSel); }, 400);
+    return;
+  }
+  const ind = indOf(name), s = series(ind);
+  // 오래된 날이 왼쪽. 그 지표의 값이 처음 나오는 날부터만 보인다
+  let first = -1;
+  for (let i = s.length - 1; i >= 0; i--) if (valid(ind, s[i])) { first = i; break; }
+  const dates = [], values = [];
+  for (let i = first; i >= 0; i--) { dates.push(DATES[i]); values.push(valid(ind, s[i]) ? s[i] : null); }
+  _chartDates = dates;
+  const r = graphRange();
+  area.innerHTML = `
+    <div class="chart-card">
+      <div class="chart-top">
+        <div class="latest-val"><span class="latest-num" id="latest-num">-</span><span class="latest-label">최근값${ind.unit ? ' · ' + esc(ind.unit) : ''}</span></div>
+        <div class="seg" id="range-seg" role="group" aria-label="그래프 기간">${Object.entries(RANGES).map(([k, t]) => `<button type="button" data-r="${k}" class="${k === r ? 'active' : ''}">${t}</button>`).join('')}</div>
+      </div>
+      <div class="peak-row"><span class="peak-label">🏆 기간 최고</span><span class="peak-val" id="peak-val">-</span><span class="peak-date" id="peak-date"></span><span class="peak-diff" id="peak-diff"></span></div>
+      <div class="peak-row low"><span class="peak-label">🔻 기간 최저</span><span class="peak-val" id="low-val">-</span><span class="peak-date" id="low-date"></span><span class="peak-diff" id="low-diff"></span></div>
+      <div class="chart-canvas-wrap"><canvas id="my-chart"></canvas></div>
+      <p class="chart-hint">두 손가락: 확대/축소 · 끌기: 이동 · 기간 단추를 다시 누르면 처음 범위로</p>
+    </div>`;
+  if (!values.length) return;
   const tickSize = isTablet() ? 13 : 11;   // 태블릿 가로: 팔 길이에서 보이게 조금 키운다
   chartInstance = new Chart(document.getElementById('my-chart').getContext('2d'), {
     type: 'line',
     data: {
-      labels: dates.map(formatDateShort),
+      labels: dates.map(fmtDate),
       datasets: [{
-        label: name,
-        data: values,
-        borderColor: '#1d4ed8',
-        backgroundColor: 'rgba(29,78,216,0.08)',
-        borderWidth: 2,
-        pointBackgroundColor: '#1d4ed8',
-        pointRadius: dates.length <= 60 ? 3 : 0,
-        pointHoverRadius: 5,
+        label: name, data: values,
+        borderColor: '#1d4ed8', backgroundColor: 'rgba(29,78,216,0.08)', borderWidth: 2,
+        pointBackgroundColor: '#1d4ed8', pointRadius: 0, pointHoverRadius: 5,
         fill: true, tension: 0.3, spanGaps: true,
       }]
     },
     options: {
-      responsive: true, maintainAspectRatio: false,
+      responsive: true, maintainAspectRatio: false, animation: false,
       interaction: { mode: 'index', intersect: false },
       scales: {
         x: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: tickSize }, maxRotation: 45, maxTicksLimit: 12 } },
-        y: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: tickSize }, callback: v => formatNum(v) } }
+        // includeBounds:false — 축 양 끝에 9,861.09 같은 어중간한 눈금이 따로 찍히던 것을 뺀다
+        y: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: tickSize }, includeBounds: false, callback: v => fmtNum(v, ind) } }
       },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: ctx => `${name}: ${formatNum(ctx.parsed.y)}` } },
+        tooltip: { callbacks: { label: ctx => `${name}: ${fmtNum(ctx.parsed.y, ind)}` } },
         zoom: {
-          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoomComplete({ chart }) { adjustY(chart); } },
-          pan:  { enabled: true, mode: 'x', onPanComplete({ chart }) { adjustY(chart); } }
+          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoomComplete({ chart }) { adjustY(chart, ind); } },
+          pan:  { enabled: true, mode: 'x', onPanComplete({ chart }) { adjustY(chart, ind); } }
         }
       }
     }
   });
-
-  // 초기 렌더 후 최고값 표시
-  setTimeout(() => adjustY(chartInstance), 100);
-
-  document.getElementById('btn-reset-zoom').addEventListener('click', () => {
-    chartInstance.resetZoom(); setTimeout(() => adjustY(chartInstance), 50);
+  applyRange(ind);
+  document.getElementById('range-seg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    store.set(K.range, b.dataset.r);
+    document.querySelectorAll('#range-seg button').forEach(x => x.classList.toggle('active', x === b));
+    applyRange(ind);
   });
 }
-
-function adjustY(chart) {
-  const ds = chart.data.datasets[0].data;
-  const labels = chart.data.labels;
-  const xs = chart.scales.x;
-  if (!xs || xs.min == null || xs.max == null || isNaN(xs.min) || isNaN(xs.max)) return;
+// 고른 기간만큼만 보이게 x축을 맞춘다 (가장 최근 기록일에서 거슬러 올라간 날짜부터)
+function applyRange(ind) {
+  const chart = chartInstance; if (!chart) return;
+  const n = _chartDates.length, r = graphRange();
+  if (r === 'all' || n < 2) chart.resetZoom('none');
+  else {
+    const cut = shiftDate(_chartDates[n - 1], r === '1m' ? 'm' : r === '3m' ? 'q' : 'y');
+    let min = _chartDates.findIndex(d => d >= cut); if (min < 0) min = 0;
+    if (min > n - 2) min = Math.max(0, n - 2);
+    chart.zoomScale('x', { min, max: n - 1 }, 'none');
+  }
+  adjustY(chart, ind);
+}
+// 보이는 구간에 맞춰 세로축을 다시 잡고, 그 구간의 최고·최저를 적는다
+function adjustY(chart, ind) {
+  const ds = chart.data.datasets[0].data, xs = chart.scales.x;
+  if (!xs || xs.min == null || xs.max == null || Number.isNaN(xs.min) || Number.isNaN(xs.max)) return;
   const minIdx = Math.max(0, Math.floor(xs.min)), maxIdx = Math.min(ds.length - 1, Math.ceil(xs.max));
-  const visibleSlice = ds.slice(minIdx, maxIdx + 1);
-  const visible = visibleSlice.filter(v => v !== null);
-  if (!visible.length) return;
-  const mn = Math.min(...visible), mx = Math.max(...visible);
-  const pad = (mx - mn) * 0.1 || Math.abs(mn) * 0.05 || 1;
-  chart.options.scales.y.min = mn - pad;
-  chart.options.scales.y.max = mx + pad;
-  chart.update('none');
-
-  // 최고값 표시 업데이트
-  const peakVal = document.getElementById('peak-val');
-  const peakDate = document.getElementById('peak-date');
-  const peakDiff = document.getElementById('peak-diff');
-  if (!peakVal) return;
-
-  let peakV = -Infinity, peakIdx = -1;
+  let mn = Infinity, mx = -Infinity, hi = -1, lo = -1, count = 0;
   for (let i = minIdx; i <= maxIdx; i++) {
-    const v = ds[i];
-    if (v !== null && v > peakV) { peakV = v; peakIdx = i; }
+    const v = ds[i]; if (v === null) continue;
+    count++;
+    if (v > mx) { mx = v; hi = i; }
+    if (v < mn) { mn = v; lo = i; }
   }
-  if (peakIdx === -1) return;
-
-  peakVal.textContent = formatNum(peakV);
-  peakDate.textContent = labels[peakIdx] || '';
-
-  // 최근값(전체 데이터의 마지막 유효값)과 비교
-  const allValid = ds.filter(v => v !== null);
-  const latest = allValid[allValid.length - 1];
-  if (latest !== undefined && latest !== 0) {
-    const pct = ((peakV - latest) / latest * 100).toFixed(1);
-    const sign = pct > 0 ? '+' : '';
-    peakDiff.textContent = `현재 대비 ${sign}${pct}%`;
-    peakDiff.className = 'peak-diff ' + (pct >= 0 ? 'pos' : 'neg');
-  }
+  if (hi < 0) return;
+  const padY = (mx - mn) * 0.1 || Math.abs(mn) * 0.05 || 1;
+  chart.options.scales.y.min = mn - padY;
+  chart.options.scales.y.max = mx + padY;
+  chart.data.datasets[0].pointRadius = count <= 60 ? 3 : 0;
+  chart.update('none');
+  // 현재 = 전체 기록의 마지막 값. 고점·저점 대비는 「지금이 그때보다 얼마나」로 적는다 — 금리류는 %p
+  // (2026-11-14: 그전엔 (최고−현재)÷현재 라서 현재가 0 근처·음수인 금 할인률에 「현재 대비 −4183.3%」가 나왔다)
+  let latest = null; for (let i = ds.length - 1; i >= 0; i--) if (ds[i] !== null) { latest = ds[i]; break; }
+  const put = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; return el; };
+  put('latest-num', latest === null ? '-' : fmtNum(latest, ind));
+  const row = (pre, idx, v, word) => {
+    put(pre + '-val', fmtNum(v, ind));
+    put(pre + '-date', _chartDates[idx] ? fmtDate(_chartDates[idx]) : '');
+    const el = document.getElementById(pre + '-diff'); if (!el) return;
+    const d = latest === null ? null : fmtDelta(ind, latest, v, 1);
+    el.textContent = d ? `${word} 대비 ${d.text}` : '';
+    el.className = 'peak-diff ' + (d ? d.cls : '');
+  };
+  row('peak', hi, mx, '고점');
+  row('low', lo, mn, '저점');
 }
 
-// ── ADD MODAL ─────────────────────────────────────────────────────────
-let customCount = 0;
-
-// 지표 정의에 따라 입력 모달 필드를 동적 생성 (전체를 하나의 그리드로)
-function renderEntryFields() {
-  const indicators = getIndicators();
-  const container = document.getElementById('entry-fields-container');
-  if (!container) return;
-
-  let html = '<div class="indicator-grid">';
-  indicators.forEach(ind => {
-    const label = ind.label || ind.name;
-    const placeholder = ind.placeholder || '';
-    if (ind.autoCalc) {
-      html += `<div class="ind-field"><label>${escapeHtml(label)}</label>` +
-              `<input type="number" step="any" id="${escapeHtml(ind.id)}" class="auto-calc" readonly placeholder="${escapeHtml(placeholder)}">` +
-              (ind.autoFormula ? `<span class="auto-label">${escapeHtml(ind.autoFormula)}</span>` : '') +
-              `</div>`;
-    } else {
-      html += `<div class="ind-field"><label>${escapeHtml(label)}</label>` +
-              `<input type="number" step="any" id="${escapeHtml(ind.id)}" placeholder="${escapeHtml(placeholder)}">` +
-              `</div>`;
-    }
-  });
-  html += '</div>';
-  container.innerHTML = html;
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-function openAddModal(editDate = null) {
-  // 매번 최신 지표 정의로 폼 재생성
-  renderEntryFields();
-
-  document.getElementById('entry-date').value = editDate || new Date().toISOString().split('T')[0];
-  const indicators = getIndicators();
-  indicators.forEach(ind => {
-    const el = document.getElementById(ind.id);
-    if (el) el.value = '';
-  });
-  customCount = 0;
-  document.getElementById('custom-fields').innerHTML = '';
-
-  if (editDate) {
-    const data = loadData();
-    const entry = data[editDate] || {};
-    const fixedNames = indicators.map(i => i.name);
-    indicators.forEach(ind => {
-      if (entry[ind.name] !== undefined) {
-        const el = document.getElementById(ind.id);
-        if (el) el.value = entry[ind.name];
-      }
-    });
-    Object.entries(entry).forEach(([name, val]) => {
-      if (!fixedNames.includes(name)) addCustomRow(name, val);
-    });
-  }
-
-  // 자동계산 필드 갱신 (해당 ID들이 있을 때만)
-  calcGoldFields();
-  calcSamsungRatio();
-
-  document.getElementById('modal-add').classList.add('open');
-}
-
-function addCustomRow(name = '', val = '') {
-  customCount++;
-  const id = `custom-${customCount}`;
-  const row = document.createElement('div');
-  row.className = 'custom-row';
-  row.id = id;
-  row.innerHTML = `
-    <input type="text" placeholder="지표명" class="custom-name" value="${name}">
-    <input type="number" step="any" placeholder="값" class="custom-val" value="${val}">
-    <button class="btn-del-custom" onclick="document.getElementById('${id}').remove()">✕</button>`;
-  document.getElementById('custom-fields').appendChild(row);
-}
-
-// ── 자동계산 ────────────────────────────────────────────────────────
-function getVal(id) {
-  const el = document.getElementById(id);
-  return el ? parseFloat(el.value) : NaN;
-}
-function setVal(id, v) {
-  const el = document.getElementById(id);
-  if (el) el.value = v;
-}
-
-function calcGoldFields() {
-  const goldIntl = getVal('f-gold-intl');
-  const usd      = getVal('f-usd');
-  const goldKr   = getVal('f-gold-kr');
-
-  // 금 환산 (원/g) = 국제금(USD/트로이온스) × 환율(원/USD) ÷ 31.1035(g/트로이온스)
-  let goldKrw = '';
-  if (!isNaN(goldIntl) && !isNaN(usd)) {
-    goldKrw = Math.round(goldIntl * usd / 31.1035);
-    setVal('f-gold-krw', goldKrw);
-  } else {
-    setVal('f-gold-krw', '');
-  }
-
-  // 금 할인률 (%) = (금환산 − 국내금) ÷ 금환산 × 100
-  if (!isNaN(goldKr) && goldKrw !== '' && goldKrw !== 0) {
-    const disc = ((goldKrw - goldKr) / goldKrw) * 100;
-    setVal('f-gold-disc', disc.toFixed(2));
-  } else {
-    setVal('f-gold-disc', '');
-  }
-}
-
-function calcSamsungRatio() {
-  const sam  = getVal('f-samsung');
-  const samp = getVal('f-samsung-p');
-  if (!isNaN(sam) && !isNaN(samp) && sam !== 0) {
-    setVal('f-samsung-r', (samp / sam).toFixed(4));
-  } else {
-    setVal('f-samsung-r', '');
-  }
-}
-
-// 입력 모달 내부에서 입력이 일어날 때 자동계산 트리거 (이벤트 위임 — 동적 필드 대응)
-const goldTriggerIds = ['f-gold-intl', 'f-usd', 'f-gold-kr'];
-const samsungTriggerIds = ['f-samsung', 'f-samsung-p'];
-document.getElementById('entry-fields-container').addEventListener('input', e => {
-  const id = e.target.id;
-  if (goldTriggerIds.includes(id)) calcGoldFields();
-  if (samsungTriggerIds.includes(id)) calcSamsungRatio();
-});
-
-// ── 백업 (내보내기) ──────────────────────────────────────────────────
-document.getElementById('btn-backup').addEventListener('click', () => {
-  const data = loadData();
-  const dateCount = Object.keys(data).length;
-  if (dateCount === 0) { showToast('백업할 데이터가 없습니다.'); return; }
-  const now = new Date();
-  const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
-  const filename = `투자지표_백업_${stamp}.json`;
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-  showToast(`✅ ${dateCount}개 날짜 백업 완료`);
-});
-
-// (복원·직접 입력 버튼은 2026-09-03에 뺐다 — 앱은 읽기 전용. 입력 모달 코드는 남겨두되 여는 버튼이 없다)
-document.getElementById('close-add').addEventListener('click', () => {
-  document.getElementById('modal-add').classList.remove('open');
-});
-document.getElementById('modal-add').addEventListener('click', e => {
-  if (e.target === document.getElementById('modal-add'))
-    document.getElementById('modal-add').classList.remove('open');
-});
-
-document.getElementById('btn-save-entry').addEventListener('click', () => {
-  const date = document.getElementById('entry-date').value;
-  if (!date) { showToast('날짜를 선택하세요'); return; }
-
-  const entry = {};
-  getIndicators().forEach(ind => {
-    const el = document.getElementById(ind.id);
-    if (!el) return;
-    const v = el.value;
-    if (v !== '') entry[ind.name] = parseFloat(v);
-  });
-  document.querySelectorAll('.custom-row').forEach(row => {
-    const name = row.querySelector('.custom-name').value.trim();
-    const val = row.querySelector('.custom-val').value;
-    if (name && val !== '') entry[name] = parseFloat(val);
-  });
-
-  if (Object.keys(entry).length === 0) { showToast('최소 하나의 값을 입력하세요'); return; }
-
-  const data = loadData();
-  data[date] = entry;
-  saveData(data);
-  document.getElementById('modal-add').classList.remove('open');
-  renderHome();
-  showToast(`✅ ${formatDate(date)} 저장 완료 (${Object.keys(entry).length}개 항목)`);
-});
-
-// ── 설정 탭 ────────────────────────────────────────────────────────
+// ── 설정 탭: 순서 · 숨기기 (이 기기에서만) ────────────────────────────
+// 2026-11-14: 받기 전용이 되기 전의 「새 지표 추가」·「삭제」를 걷었다 — 앱에서 더한 지표는 값이 모이지 않았고,
+// 지워도 표 맨 아래로 내려갈 뿐이었다. 이제 지표 목록은 서버가 주고, 여기서는 순서와 숨김만 바꾼다
 let sortableInstance = null;
-
-function renderSettingsTab() {
-  const list = getIndicators();
-  const container = document.getElementById('settings-indicator-list');
-  if (!container) return;
-
-  let html = '';
-  list.forEach((ind, idx) => {
-    const isFirst = idx === 0;
-    const isLast  = idx === list.length - 1;
-    const locked  = !!ind.autoCalc;
-    html += `<div class="settings-row" data-id="${escapeHtml(ind.id)}">` +
-      `<span class="drag-handle" title="드래그해서 이동">⋮⋮</span>` +
-      `<span class="ind-name">${escapeHtml(ind.name)}` +
-      (locked ? `<span class="ind-locked-tag">자동계산</span>` : '') +
-      `</span>` +
-      `<button class="btn-move" data-act="up" data-id="${escapeHtml(ind.id)}" ${isFirst?'disabled':''} title="위로">↑</button>` +
-      `<button class="btn-move" data-act="down" data-id="${escapeHtml(ind.id)}" ${isLast?'disabled':''} title="아래로">↓</button>` +
-      `<button class="btn-del" data-act="del" data-id="${escapeHtml(ind.id)}" ${locked?'disabled':''} title="${locked?'자동계산 지표는 삭제 불가':'삭제'}">🗑</button>` +
-    `</div>`;
-  });
-
-  container.innerHTML = html;
-  container.style.setProperty('--rows', Math.ceil(list.length / 3));  // 태블릿 가로 세 단(위→아래) 줄 수
-
-  // 드래그앤드롭 초기화 (모바일/PC 모두 지원)
+function renderSettings() {
+  const list = indicators().list;
+  const box = document.getElementById('settings-indicator-list');
+  box.innerHTML = list.map((ind, idx) =>
+    `<div class="settings-row${ind.off ? ' is-hidden' : ''}" data-name="${esc(ind.name)}">` +
+      `<span class="drag-handle" title="끌어서 옮기기">⋮⋮</span>` +
+      `<span class="ind-name">${esc(ind.name)}${ind.calc ? '<span class="ind-tag">계산</span>' : ''}${hasData(ind) ? '' : '<span class="ind-tag off">기록 없음</span>'}</span>` +
+      `<button class="btn-move" data-act="up" ${idx === 0 ? 'disabled' : ''} title="위로" aria-label="위로">↑</button>` +
+      `<button class="btn-move" data-act="down" ${idx === list.length - 1 ? 'disabled' : ''} title="아래로" aria-label="아래로">↓</button>` +
+      `<button class="btn-hide" data-act="hide">${ind.off ? '보이기' : '숨김'}</button>` +
+    `</div>`).join('');
+  box.style.setProperty('--rows', Math.ceil(list.length / 3));   // 태블릿 가로 세 단(위→아래) 줄 수
   if (sortableInstance) { sortableInstance.destroy(); sortableInstance = null; }
   if (typeof Sortable !== 'undefined') {
-    sortableInstance = new Sortable(container, {
-      handle: '.drag-handle',
-      animation: 150,
-      ghostClass: 'sortable-ghost',
-      chosenClass: 'sortable-chosen',
-      dragClass: 'sortable-drag',
-      forceFallback: true,    // 모바일 일관성 위해 fallback 사용
-      fallbackTolerance: 5,
+    sortableInstance = new Sortable(box, {
+      handle: '.drag-handle', animation: 150,
+      ghostClass: 'sortable-ghost', chosenClass: 'sortable-chosen', dragClass: 'sortable-drag',
+      forceFallback: true, fallbackTolerance: 5,   // 모바일 일관성 위해 fallback 사용
+      onStart: () => { sortDragging = true; },
       onEnd: evt => {
+        setTimeout(() => { sortDragging = false; }, 350);   // 놓는 순간의 touchend 가 탭을 넘기지 않게
         if (evt.oldIndex === evt.newIndex) return;
-        const cur = getIndicators();
-        const [moved] = cur.splice(evt.oldIndex, 1);
-        cur.splice(evt.newIndex, 0, moved);
-        saveIndicators(cur);
-        renderSettingsTab(); // ↑↓ 버튼의 disabled 상태 갱신 위해 재렌더
+        saveOrder([...box.querySelectorAll('.settings-row')].map(r => r.dataset.name));
       }
     });
   }
 }
-
-// 전체 목록에서 위/아래로 이동
-function moveIndicator(id, direction) {
-  const list = getIndicators();
-  const idx = list.findIndex(i => i.id === id);
-  if (idx < 0) return;
-  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-  if (swapIdx < 0 || swapIdx >= list.length) return;
-  [list[swapIdx], list[idx]] = [list[idx], list[swapIdx]];
-  saveIndicators(list);
-  renderSettingsTab();
-}
-
-function deleteIndicator(id) {
-  const list = getIndicators();
-  const ind = list.find(i => i.id === id);
-  if (!ind) return;
-  if (ind.autoCalc) { showToast('자동계산 지표는 삭제할 수 없습니다'); return; }
-  if (!confirm(`"${ind.name}" 지표를 삭제할까요?\n(기존 입력된 데이터는 표/차트에 남아 있습니다)`)) return;
-  const next = list.filter(i => i.id !== id);
-  saveIndicators(next);
-  rememberRemoved(ind.name);   // 나중에 더한 기본 지표가 되살아나지 않도록
-  renderSettingsTab();
-  showToast(`🗑 ${ind.name} 삭제됨`);
-}
-
-function addIndicator(name, placeholder) {
-  const list = getIndicators();
-  // 같은 이름 중복 체크
-  if (list.some(i => i.name === name)) { showToast('같은 이름의 지표가 이미 있습니다'); return false; }
-  // 고유 ID 생성
-  const id = 'f-custom-' + Date.now().toString(36);
-  const newInd = { id, name, placeholder: placeholder || '' };
-  // 목록의 맨 끝에 추가
-  list.push(newInd);
-  saveIndicators(list);
-  renderSettingsTab();
-  showToast(`✅ ${name} 추가됨`);
-  return true;
-}
-
-// 설정 탭 이벤트 위임 (↑↓🗑)
+function saveOrder(names) { store.set(K.order, JSON.stringify(names)); settingsChanged(); }
+function settingsChanged() { invalidateIndicators(); renderSettings(); }
 document.getElementById('settings-indicator-list').addEventListener('click', e => {
-  const btn = e.target.closest('button');
-  if (!btn) return;
-  const id = btn.dataset.id;
-  const act = btn.dataset.act;
-  if (act === 'up')   moveIndicator(id, 'up');
-  if (act === 'down') moveIndicator(id, 'down');
-  if (act === 'del')  deleteIndicator(id);
-});
-
-// 기본값으로 초기화
-document.getElementById('btn-settings-reset').addEventListener('click', () => {
-  if (!confirm('지표 목록을 기본값으로 되돌릴까요?\n(추가하거나 삭제한 지표 설정이 사라집니다. 입력된 데이터는 영향 없음)')) return;
-  localStorage.removeItem(INDICATORS_STORAGE);
-  localStorage.removeItem(REMOVED_STORAGE);
-  renderSettingsTab();
-  showToast('🔄 기본값으로 초기화됨');
-});
-
-// 새 지표 추가 모달
-document.getElementById('btn-settings-add').addEventListener('click', () => {
-  document.getElementById('new-ind-name').value = '';
-  document.getElementById('new-ind-placeholder').value = '';
-  document.getElementById('modal-add-indicator').classList.add('open');
-});
-document.getElementById('close-add-indicator').addEventListener('click', () => {
-  document.getElementById('modal-add-indicator').classList.remove('open');
-});
-document.getElementById('modal-add-indicator').addEventListener('click', e => {
-  if (e.target === document.getElementById('modal-add-indicator'))
-    document.getElementById('modal-add-indicator').classList.remove('open');
-});
-document.getElementById('btn-add-indicator-confirm').addEventListener('click', () => {
-  const name = document.getElementById('new-ind-name').value.trim();
-  const placeholder = document.getElementById('new-ind-placeholder').value.trim();
-  if (!name) { showToast('지표명을 입력하세요'); return; }
-  if (addIndicator(name, placeholder)) {
-    document.getElementById('modal-add-indicator').classList.remove('open');
+  const btn = e.target.closest('button'); if (!btn) return;
+  const name = btn.closest('.settings-row').dataset.name, act = btn.dataset.act;
+  const names = indicators().list.map(i => i.name), idx = names.indexOf(name);
+  if (act === 'up' && idx > 0) { [names[idx - 1], names[idx]] = [names[idx], names[idx - 1]]; saveOrder(names); }
+  if (act === 'down' && idx >= 0 && idx < names.length - 1) { [names[idx + 1], names[idx]] = [names[idx], names[idx + 1]]; saveOrder(names); }
+  if (act === 'hide') {
+    const hid = store.json(K.hidden, {}) || {};
+    hid[name] = !indOf(name).off;
+    store.set(K.hidden, JSON.stringify(hid));
+    settingsChanged();
+    showToast(hid[name] ? `「${name}」 숨겼습니다` : `「${name}」 다시 보입니다`);
   }
 });
+document.getElementById('btn-settings-reset').addEventListener('click', () => {
+  if (!confirm('지표 순서와 숨김을 기본으로 되돌릴까요?\n(이 기기에서 바꾼 것만 지워집니다. 기록은 그대로입니다)')) return;
+  store.del(K.order); store.del(K.hidden);
+  settingsChanged();
+  showToast('🔄 기본 순서로 되돌렸습니다');
+});
 
-// ── FIREBASE SYNC ─────────────────────────────────────────────────────
+// ── 서버에서 받기 ─────────────────────────────────────────────────────
+// 기록은 Firestore invest-tracker-f7e3f 의 sync/0000 문서 하나다. 읽기는 누구에게나 열려 있고 앱의 쓰기는 규칙이 전부 거부한다
+// (2026-09-03 — 기기의 낡은 사본으로 3년치를 통째로 덮어쓰는 길을 없앴다). 기록은 자동 수집(GitHub Actions)만 쓴다.
+// 2026-11-14: 「동기화 키」를 없앴다. 문서는 하나뿐이고, 키 칸은 4월에 멈춘 옛 문서에 잘못 붙는 길이기만 했다
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDnQ1txyDi0DJJPdW-kWU5QTf_5Ah6ldtU",
   authDomain: "invest-tracker-f7e3f.firebaseapp.com",
@@ -1671,108 +1320,101 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "978474851175",
   appId: "1:978474851175:web:df0f7306a9ab7f77382dc2"
 };
-const SYNC_KEY_STORAGE = 'invest_sync_key';
-// 키가 없는 기기는 매일 자동 수집이 쓰는 문서(sync/0000)에 바로 붙는다 (2026-10-15 — 새 주소로 옮긴 태블릿이 키가 없어 8월 기본 데이터에 멈춤).
-// 시세만 담긴 받기 전용 문서라 키를 숨길 이유가 없다. ☁️에서 「연결 끊기」를 누른 기기는 OFF 표시를 남겨 다시 붙지 않는다
-const DEFAULT_SYNC_KEY = '0000';
-const SYNC_OFF_STORAGE = 'invest_sync_off';
-let db = null;
-let syncUnsubscribe = null;
-let lastUploadTime = 0;
-
-// ── 저장 권한 ────────────────────────────────────────────────────────
-// 보안 규칙상 읽기는 누구나, 쓰기는 로그인한 허용 계정만 된다.
-// 그래서 앱 전체를 잠그지 않는다 — 기록을 보는 데는 로그인이 필요 없고,
-// 오프라인에서도 종전처럼 열린다. 클라우드에 올릴 때만 계정을 확인한다.
-// ⚠ 2026-09-03: 앱은 **받기 전용**이 됐다. 올리기(uploadToFirebase)·로그인·보류 업로드·
-//   금 환산 재계산 업로드를 전부 뺐다. 기기에 남은 낡은 데이터로 클라우드 전체(3년치)를
-//   통째로 덮어쓰는 경로가 넷이나 있었기 때문이다. 기록은 GitHub Actions(collect.js)만 쓴다.
-//   서버 규칙(firestore.rules)도 앱 계정의 쓰기를 거부하므로, 옛 캐시 버전이 남아 있어도 못 올린다.
-let auth = null;
-let currentUser = null;
-
-// 첫 화면은 기기에 저장된 기록으로 먼저 그리고, Firebase는 그 뒤에 불러온다 (2026-09-29 —
-// "처음 들어갈 때 동기화가 느리다"). head에 있을 땐 SDK 셋을 다 받을 때까지 화면이 비어 있었다
+const SYNC_DOC = '0000';
+// Firebase 는 구글 서버(gstatic)에서 받되, 받은 파일이 이 값과 다르면 브라우저가 실행하지 않는다(SRI)
 const FIREBASE_SDK = [
-  'https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js',
-  'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js',
+  ['https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js', 'sha384-yuGdyIzzYtOBlBG6JOWn+Ey9kpq7HocusNuxEGyyohr1eEyXpeEyehIIXC/hznw4'],
+  ['https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js', 'sha384-nwX2Qpkhc2sv6L0ZPkLefLGguao67toSowvePuQvGF6cG+8MUphGI2uI94Ls3JF7'],
 ];
-function loadScript(src) {
+let db = null, syncUnsubscribe = null, _fbLoading = false, forceAccept = false;
+const SYNC = { status: 'disconnected', detail: '' };
+function loadScript(src, integrity) {
   return new Promise((ok, fail) => {
     const el = document.createElement('script');
-    el.src = src; el.onload = ok; el.onerror = fail;
+    el.src = src; el.crossOrigin = 'anonymous';
+    if (integrity) el.integrity = integrity;
+    el.onload = ok; el.onerror = fail;
     document.head.appendChild(el);
   });
 }
+// 첫 화면은 기기에 저장된 기록으로 먼저 그리고, Firebase는 그 뒤에 불러온다 (2026-09-29 — "처음 들어갈 때 동기화가 느리다")
 async function loadFirebase() {
-  try {
-    for (const src of FIREBASE_SDK) await loadScript(src);
-    initFirebase();
-  } catch(e) { setSyncStatus('offline'); }
-}
-
-function initFirebase() {
-  try {
-    firebase.initializeApp(FIREBASE_CONFIG);
-    db = firebase.firestore();
-
-    const savedKey = localStorage.getItem(SYNC_KEY_STORAGE) || (localStorage.getItem(SYNC_OFF_STORAGE) ? '' : DEFAULT_SYNC_KEY);
-    if (savedKey) {
-      document.getElementById('sync-key-input').value = savedKey;
-      startSync(savedKey);
-    }
-  } catch(e) { console.error('Firebase 초기화 실패:', e); }
-}
-
-// (renderAuthRow·toggleAuth는 2026-09-03에 삭제 — 로그인이 필요한 올리기 기능이 없어졌다)
-
-function startSync(key) {
-  if (!db || !key.trim()) return;
-  // '/'가 들어가면 doc()이 예외를 던져 설정 창이 안 닫힌다 (10/20 점검)
-  if (key.includes('/')) { showToast('동기화 키에 / 는 쓸 수 없습니다'); return; }
-  if (syncUnsubscribe) syncUnsubscribe();
-  localStorage.setItem(SYNC_KEY_STORAGE, key.trim());
-  localStorage.removeItem(SYNC_OFF_STORAGE);
+  if (db || _fbLoading) return;
+  _fbLoading = true;
   setSyncStatus('syncing');
-
-  // 「동기화됨」은 서버가 확인해 준 스냅샷일 때만 (2026-10-20 클라우드 점검 #3).
-  // SDK는 서버에 못 붙으면 캐시(어제 데이터, 또는 없음)를 fromCache로 올려 주는데, 전엔 그것도
-  // 「동기화됨」으로 칠해 연결이 안 됐는지 알 수 없었다. includeMetadataChanges라야 캐시 → 서버
-  // 확인으로 바뀌는 순간(데이터는 같고 metadata만 바뀜)에도 콜백이 와서 상태가 올라간다
-  syncUnsubscribe = db.collection('sync').doc(key.trim()).onSnapshot({ includeMetadataChanges: true }, snap => {
+  try {
+    if (typeof firebase === 'undefined') for (const [src, sri] of FIREBASE_SDK) await loadScript(src, sri);
+    if (!firebase.apps || !firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.firestore();
+    startSync();
+  } catch (e) {
+    setSyncStatus('offline', navigator.onLine ? '연결 프로그램을 받지 못했습니다. 잠시 뒤 「다시 받기」를 눌러 주세요.' : '');
+  }
+  _fbLoading = false;
+}
+function startSync() {
+  if (!db) { loadFirebase(); return; }
+  if (syncUnsubscribe) { syncUnsubscribe(); syncUnsubscribe = null; }
+  setSyncStatus('syncing');
+  // 「동기화됨」은 서버가 확인해 준 스냅샷일 때만 (2026-10-20 클라우드 점검 #3). includeMetadataChanges 라야
+  // 캐시 → 서버 확인으로 바뀌는 순간(데이터는 같고 metadata 만 바뀜)에도 콜백이 와서 상태가 올라간다
+  syncUnsubscribe = db.collection('sync').doc(SYNC_DOC).onSnapshot({ includeMetadataChanges: true }, snap => {
     const live = !snap.metadata.fromCache;
-    const status = live ? 'connected' : (navigator.onLine ? 'syncing' : 'offline');
-    if (!snap.exists) {
-      // 서버가 "문서 없음"이라고 하면 키가 틀린 것이다 — 동기화됨이 아니다
-      setSyncStatus(live ? 'missing' : status);
-      return;
-    }
-    try {
-      const parsed = JSON.parse(snap.data().payload);
-      const raw = JSON.stringify(parsed);
-      // 기록은 하루 한 번 바뀐다. 기기에 있는 것과 같으면 다시 저장·다시 그리기를 건너뛴다
-      if (raw === localStorage.getItem(STORAGE_KEY)) { setSyncStatus(status); return; }
-      localStorage.setItem(STORAGE_KEY, raw);
-      renderHome();
-      const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
-      if (activeTab === 'table') renderTable();
-      if (activeTab === 'graph') renderIndicatorSelect();
-      setSyncStatus(status);
-      showToast('☁️ 새 기록을 받았습니다');
-    } catch(e) { setSyncStatus('offline'); }
-  }, () => setSyncStatus('offline'));
+    const base = live ? 'connected' : (navigator.onLine ? 'syncing' : 'offline');
+    if (!snap.exists) { setSyncStatus(live ? 'missing' : base); return; }
+    let doc = null; try { doc = snap.data(); } catch (e) {}
+    if (!doc || typeof doc !== 'object') { setSyncStatus('bad', '서버 문서를 읽지 못했습니다.'); return; }
+    applyServerDoc(doc, base, live);
+  }, err => {
+    const code = err && err.code ? String(err.code) : '';
+    if (code === 'permission-denied') setSyncStatus('denied', '서버가 읽기를 거절했습니다(규칙 또는 권한).');
+    else setSyncStatus('offline', code && navigator.onLine ? `서버 오류: ${code}` : '');
+  });
 }
+function applyServerDoc(doc, base, live) {
+  // 1) 지표 목록 — 서버가 준 것이 바뀌었으면 받아 둔다
+  let indsChanged = false;
+  if (typeof doc.indicators === 'string' && doc.indicators !== store.get(K.serverInds) && parseIndicatorList(doc.indicators)) {
+    store.set(K.serverInds, doc.indicators); indsChanged = true;
+  }
+  // 2) 기록
+  let parsed = null;
+  try { parsed = JSON.parse(doc.payload); } catch (e) {}
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    // 그전엔 이때도 「오프라인」이라고만 떴다 — 인터넷은 되는데 무슨 일인지 알 수 없었다
+    setSyncStatus('bad', '서버 기록의 형식이 달라 받지 않았습니다. 이 기기에 있던 기록을 그대로 보여 줍니다.');
+    if (indsChanged) { invalidateIndicators(); rerender(); }
+    return;
+  }
+  const { data, dropped } = cleanPayload(parsed);
+  const got = Object.keys(data).length, have = DATES.length;
+  // 급감 보호 — 서버 기록이 이 기기 것의 절반 아래로 줄어 오면 덮지 않는다. 수집이 잘못 써서 3년치가 하루치가 돼도
+  // 기기 사본은 남는다 (2026-11-14 — 그전엔 1일치·빈 기록이 와도 그대로 덮었다)
+  if (!forceAccept && have >= 30 && got < have * 0.5) {
+    setSyncStatus('shrunk', `서버 기록이 ${got.toLocaleString()}일치로 줄어 받지 않았습니다. 이 기기에는 ${have.toLocaleString()}일치가 그대로 있습니다.`);
+    if (indsChanged) { invalidateIndicators(); rerender(); }
+    return;
+  }
+  forceAccept = false;
+  const raw = JSON.stringify(data);
+  const changed = raw !== _rawLocal;   // 기록은 하루 한 번 바뀐다. 같으면 다시 저장·다시 그리기를 건너뛴다
+  if (changed) {
+    const saved = store.set(K.data, raw);
+    setData(data, raw);
+    if (!saved) showToast('이 기기에 저장하지 못했습니다(저장 공간). 화면에는 새 기록이 보입니다.', 4000);
+  }
+  if (live) store.set(K.meta, JSON.stringify({ updatedAt: Number(doc.updatedAt) || 0, receivedAt: Date.now(), dropped }));
+  if (changed || indsChanged) { invalidateIndicators(); rerender(); }
+  setSyncStatus(base, dropped ? `형식이 다른 값 ${dropped}개는 빼고 받았습니다.` : '');
+  if (changed && have) showToast('☁️ 새 기록을 받았습니다');
+}
+function rerender() { _tableKey = ''; _dataKey = ''; _graphKey = ''; renderActive(); }
 
-// (uploadToFirebase는 2026-09-03에 삭제 — 위 주석 참고)
-
-// 앱이 다시 화면에 나타나면 구독을 새로 건다 (2026-10-15 — 사용자: 매일 아침 열면 「동기화됨」인데 어제 표 그대로, 껐다 켜야 보였다).
+// 앱이 다시 화면에 나타나면 구독을 새로 건다 (2026-10-15 — 매일 아침 열면 「동기화됨」인데 어제 표 그대로, 껐다 켜야 보였다).
 // 폰은 백그라운드에 둔 앱의 연결을 끊는데, 다시 띄울 때 SDK가 새 기록을 바로 다시 받아 오지 않는 일이 있었다.
-// 30초 넘게 가려져 있었거나 네트워크가 돌아오면 끊고 다시 구독한다 — 서버의 최신 문서가 새로 와서 표가 다시 그려진다
+// 30초 넘게 가려져 있었거나 네트워크가 돌아오면 끊고 다시 구독한다
 let _hiddenAt = 0;
-function resubscribe() {
-  const k = localStorage.getItem(SYNC_KEY_STORAGE);
-  if (db && k) startSync(k);
-}
+function resubscribe() { if (db) startSync(); else loadFirebase(); }
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { _hiddenAt = Date.now(); return; }
   if (_hiddenAt && Date.now() - _hiddenAt > 30000) resubscribe();
@@ -1780,125 +1422,106 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pageshow', e => { if (e.persisted) resubscribe(); });   // 뒤로 가기 캐시에서 되살아난 경우
 window.addEventListener('online', resubscribe);
+window.addEventListener('offline', () => { if (SYNC.status === 'connected' || SYNC.status === 'syncing') setSyncStatus('offline'); });
 
-function stopSync() {
-  if (syncUnsubscribe) { syncUnsubscribe(); syncUnsubscribe = null; }
-  localStorage.removeItem(SYNC_KEY_STORAGE);
-  localStorage.setItem(SYNC_OFF_STORAGE, '1');
-  setSyncStatus('disconnected');
+const SYNC_LABEL = {
+  connected: '동기화됨', syncing: '연결 중…', offline: '오프라인', disconnected: '연결 전',
+  missing: '서버에 기록 문서가 없습니다', bad: '서버 기록을 읽지 못했습니다', denied: '읽기가 거절됐습니다', shrunk: '서버 기록이 크게 줄었습니다',
+};
+function setSyncStatus(status, detail) {
+  SYNC.status = status; SYNC.detail = detail || '';
+  const cls = status === 'connected' || status === 'syncing' || status === 'offline' ? status : status === 'disconnected' ? '' : 'warn';
+  [document.getElementById('sync-dot'), document.getElementById('sync-dot-modal')].forEach(d => { if (d) d.className = 'sync-dot' + (cls ? ' ' + cls : ''); });
+  renderSyncPanel();
+  if (!DATES.length && activeTab() === 'table') { _tableKey = ''; renderTable(); }
 }
-
-function setSyncStatus(status) {
-  const dots = [document.getElementById('sync-dot'), document.getElementById('sync-dot-modal')];
-  const txt = document.getElementById('sync-status-text');
-  const labels = { connected:'동기화됨', syncing:'연결 중...', offline:'오프라인', missing:'키 확인 필요', disconnected:'미연결' };
-  const dotCls = status === 'missing' ? 'offline' : status;
-  dots.forEach(d => { if(d) { d.className='sync-dot'; if(status!=='disconnected') d.classList.add(dotCls); }});
-  if (txt) txt.textContent = labels[status] || '미연결';
+function renderSyncPanel() {
+  const txt = document.getElementById('sync-status-text'); if (!txt) return;
+  txt.textContent = SYNC_LABEL[SYNC.status] || SYNC_LABEL.disconnected;
+  document.getElementById('sync-detail').textContent = SYNC.detail;
+  document.getElementById('btn-sync-force').hidden = SYNC.status !== 'shrunk';
+  const meta = store.json(K.meta, {}) || {};
+  const rows = [];
+  if (DATES.length) {
+    const latest = DATES[0], today = (() => { const t = new Date(); return `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`; })();
+    rows.push(['마지막 기록일', `${latest} (${dowOf(latest)}) · 지표 ${Object.keys(DATA[latest]).length}개`]);
+    const wd = new Date().getDay();
+    rows.push(['오늘 기록', latest >= today ? '들어왔습니다' : (wd === 0 || wd === 6) ? '주말이라 없습니다' : '아직 없습니다 (휴장일이면 안 들어옵니다)']);
+    rows.push(['이 기기의 기록', `${DATES.length.toLocaleString()}일 · ${DATES[DATES.length - 1]} 부터`]);
+  } else rows.push(['이 기기의 기록', '아직 없습니다']);
+  rows.push(['서버 기록이 바뀐 때', fmtStamp(meta.updatedAt)]);
+  rows.push(['서버와 맞춰 본 때', fmtStamp(meta.receivedAt)]);
+  document.getElementById('sync-rows').innerHTML = rows.map(([a, b]) => `<div class="sync-row"><span>${esc(a)}</span><span>${esc(b)}</span></div>`).join('');
+  document.getElementById('app-ver').textContent = '판 ' + APP_VER;
 }
-
-// (saveData → 클라우드 업로드 훅은 2026-09-03에 삭제. 이제 saveData는 이 기기에만 쓴다)
-
-// 동기화 모달 UI
-document.getElementById('btn-sync-open').addEventListener('click', () => {
-  document.getElementById('modal-sync').classList.add('open');
-});
-document.getElementById('close-sync').addEventListener('click', () => {
-  document.getElementById('modal-sync').classList.remove('open');
-});
-document.getElementById('modal-sync').addEventListener('click', e => {
-  if (e.target === document.getElementById('modal-sync'))
-    document.getElementById('modal-sync').classList.remove('open');
-});
-// (⬆️ 이 기기 → 클라우드 버튼과 Google 로그인은 2026-09-03에 뺐다 — 앱은 받기 전용)
-
-// ⬇️ 클라우드 → 이 기기 (클라우드 데이터를 받고 이후 실시간 동기화)
-document.getElementById('btn-sync-download').addEventListener('click', () => {
-  const key = document.getElementById('sync-key-input').value.trim();
-  if (!key) { showToast('동기화 키를 입력하세요'); return; }
-  startSync(key);
-  document.getElementById('modal-sync').classList.remove('open');
-  showToast('⬇️ 클라우드 데이터를 받아오는 중...');
-});
-document.getElementById('btn-sync-disconnect').addEventListener('click', () => {
-  stopSync();
-  document.getElementById('sync-key-input').value = '';
-  showToast('동기화 연결 해제됨');
+document.getElementById('btn-sync-open').addEventListener('click', () => { renderSyncPanel(); openModal('modal-sync'); });
+document.getElementById('close-sync').addEventListener('click', () => closeModal());
+document.getElementById('modal-sync').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+document.getElementById('btn-sync-refresh').addEventListener('click', () => { resubscribe(); showToast('서버에서 다시 받는 중…'); });
+document.getElementById('btn-sync-force').addEventListener('click', () => {
+  if (!confirm('줄어든 서버 기록으로 이 기기의 기록을 바꿀까요?\n(바꾸기 전에 데이터 탭의 「백업」으로 지금 기록을 내보내 둘 수 있습니다)')) return;
+  forceAccept = true; resubscribe();
 });
 
-// ── 금 환산 일괄 재계산 (일반온스 → 트로이온스, 기기당 1회) ─────────
-let goldMigrationChanged = false;
-function migrateGoldRecalc() {
-  const FLAG = 'gold_recalc_troy_v1';
-  if (localStorage.getItem(FLAG)) return;
-  const data = loadData();
-  let changed = 0;
-  Object.keys(data).forEach(d => {
-    const e = data[d];
-    const intl = parseFloat(e['국제 금']);
-    const usd  = parseFloat(e['원달러환율']);
-    if (!isNaN(intl) && !isNaN(usd) && intl > 0 && usd > 0) {
-      const krw = Math.round(intl * usd / 31.1035);
-      e['금 환산'] = krw;
-      const kr = parseFloat(e['국내 금']);
-      if (!isNaN(kr) && krw > 0) {
-        e['금 할인률'] = parseFloat((((krw - kr) / krw) * 100).toFixed(2));
-      }
-      changed++;
-    }
-  });
-  if (changed > 0) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); // 직접 저장 (이 시점엔 db 미연결)
-    goldMigrationChanged = true;
-  }
-  localStorage.setItem(FLAG, '1');
-  if (changed > 0) setTimeout(() => showToast(`💰 금 환산 ${changed}개 날짜 재계산 완료`), 600);
-}
-
-// ── 주소 이전 (2026-10-15) ───────────────────────────────────────────
-// github.io 공용 주소(여러 웹앱이 보관함·설치 판정을 나눠 씀) → 전용 주소 https://minsung-invest.web.app
-// 지표 목록·지운 지표는 기기 localStorage 에만 있어 주소가 바뀌면 따라오지 않는다.
-// 옛 주소로 들어오면 맨 위(head) 스크립트가 그 둘을 #move=… 에 담아 바로 넘기고(2026-11-14 — 그전엔 「새 주소로 이동」 띠의 단추),
-// 새 주소가 한 번 받아 저장한다(이미 있는 값은 안 덮음). # 뒤는 서버로 가지 않는다. 받은 뒤엔 주소창에서 지운다.
-// 동기화 키는 옛 판의 띠 단추가 아직 실어 보낼 수 있어 받는 쪽엔 남겨 둔다
-const MOVE_KEYS = [SYNC_KEY_STORAGE, INDICATORS_STORAGE, REMOVED_STORAGE];
-// 링크로 들어온 값은 남이 만든 링크일 수도 있다. 전엔 검사 없이 저장해, 지표 id에 HTML을 심은
-// 링크 한 번으로 스크립트가 기기에 남아 매번 실행됐다 (2026-10-20 클라우드 점검 #2 — Playwright 재현)
-const _jsonArr = (v, ok) => { try { const a = JSON.parse(v); return Array.isArray(a) && a.every(ok); } catch { return false; } };
+// ── 주소 이전 (2026-10-15) · 옛 설정 옮기기 ───────────────────────────
+// github.io 공용 주소 → 전용 주소 https://minsung-invest.web.app. 옛 주소로 들어오면 맨 위(head) 스크립트가 그 기기의
+// 지표 목록·지운 지표를 #move=… 에 담아 바로 넘기고(2026-11-14), 여기서 한 번 받는다. # 뒤는 서버로 가지 않고, 받은 뒤엔 주소창에서 지운다.
+// 링크로 들어온 값은 남이 만든 링크일 수도 있으므로 모양을 확인하고(2026-10-20 점검 #2), 이미 설정을 가진 기기는 받지 않는다.
+// 동기화 키는 받지 않는다(2026-11-14 — 받는 문서는 하나로 고정)
+const _jsonArr = (v, ok) => { try { const a = JSON.parse(v); return Array.isArray(a) && a.every(ok); } catch (e) { return false; } };
 const MOVE_VALID = {
-  [SYNC_KEY_STORAGE]: v => /^[A-Za-z0-9_-]{1,64}$/.test(v),
-  [INDICATORS_STORAGE]: v => _jsonArr(v, i => i && typeof i === 'object'
-    && /^[A-Za-z0-9_-]{1,40}$/.test(i.id) && typeof i.name === 'string' && i.name.length <= 30),
-  [REMOVED_STORAGE]: v => _jsonArr(v, s => typeof s === 'string' && s.length <= 30),
+  [OLD_INDS]: v => _jsonArr(v, i => i && typeof i === 'object' && typeof i.name === 'string' && i.name.length > 0 && i.name.length <= 30),
+  [OLD_REMOVED]: v => _jsonArr(v, s => typeof s === 'string' && s.length <= 30),
 };
 function b64urlDecode(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return decodeURIComponent(escape(atob(s))); }
 function importMovedSettings() {
   const m = /^#move=([A-Za-z0-9_-]+)$/.exec(location.hash || '');
   if (!m) return;
   let n = 0;
-  try {
-    const data = JSON.parse(b64urlDecode(m[1]));
-    MOVE_KEYS.forEach(k => {
-      if (typeof data[k] !== 'string' || localStorage.getItem(k) !== null) return;
-      if (!MOVE_VALID[k](data[k])) return;   // 모양이 다르면 통째로 버린다
-      localStorage.setItem(k, data[k]); n++;
-    });
-  } catch (e) {}
-  history.replaceState(null, '', location.pathname + location.search);
-  if (n) setTimeout(() => showToast('옛 주소의 설정(동기화 키·지표 목록)을 가져왔습니다'), 800);
+  if (!store.get(K.migrated) && !store.get(K.order)) {
+    try {
+      const data = JSON.parse(b64urlDecode(m[1]));
+      Object.keys(MOVE_VALID).forEach(k => {
+        if (typeof data[k] !== 'string' || data[k].length > 20000 || store.get(k) !== null) return;
+        if (!MOVE_VALID[k](data[k])) return;   // 모양이 다르면 통째로 버린다
+        store.set(k, data[k]); n++;
+      });
+    } catch (e) {}
+  }
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  if (n) setTimeout(() => showToast('옛 주소의 설정(지표 순서)을 가져왔습니다'), 800);
 }
-importMovedSettings(); // 아래 initData·지표·동기화가 localStorage 를 읽기 전에
+// 2026-11-14 전의 설정 칸을 새 모양으로 한 번 옮긴다. 옛 목록의 순서가 기본 그대로면(손으로 더한 지표가 맨 뒤에 붙은 것까지)
+// 순서를 따로 남기지 않고 서버 순서를 따른다. 손댄 흔적이 있으면 이 기기의 순서로 남긴다
+const OLD_DEFAULT_ORDER = ['국채 3년', '국채10년', '미국채 2년', '미국채 10년', '미국채 30년', '원달러환율', '달러인덱스', '코스피지수', '코스닥지수', '나스닥', '다우존스', 'S&P500',
+  '국제 금', '금 환산', '금 할인률', '국내 금', '구리', '원유', '비트코인', '삼성전자', '삼성전자우', '삼성우비율'];
+function migrateOldSettings() {
+  if (store.get(K.migrated)) return;
+  try {
+    const names = (store.json(OLD_INDS, []) || []).map(i => i && i.name).filter(n => typeof n === 'string' && n.length <= 40);
+    if (names.length) {
+      const mine = names.filter(n => OLD_DEFAULT_ORDER.includes(n)).join('|');
+      const dflt = OLD_DEFAULT_ORDER.filter(n => names.includes(n)).join('|');
+      const firstExtra = names.findIndex(n => !OLD_DEFAULT_ORDER.includes(n));
+      const lastDefault = names.map(n => OLD_DEFAULT_ORDER.includes(n)).lastIndexOf(true);
+      if (mine !== dflt || (firstExtra >= 0 && firstExtra < lastDefault)) store.set(K.order, JSON.stringify(names));
+    }
+  } catch (e) {}
+  OLD_KEYS.forEach(k => store.del(k));
+  store.set(K.migrated, '1');
+}
 
-// ── INIT ──────────────────────────────────────────────────────────────
+// ── 시작 ──────────────────────────────────────────────────────────────
 // 옛 주소(github.io)에서는 맨 위(head) 스크립트가 새 주소로 넘기는 중이다(window.__investMoved) — 앱을 띄우지 않는다.
-// 띄우면 방금 지운 기록 사본을 기본 자료로 다시 깔고, 서버에 붙고, 서비스워커를 다시 등록한다
+// 띄우면 서버에 붙어 방금 지운 기록 사본을 다시 받고, 서비스워커를 다시 등록한다
 if (!window.__investMoved) {
-  initData();
-  migrateGoldRecalc(); // 트로이온스 공식으로 과거 데이터 일괄 재계산
-  renderEntryFields(); // 입력 모달의 동적 필드 미리 생성
-  renderHome();
-  renderTable(40); // 첫 화면이 표 — 최근 40일 먼저, 나머지는 곧이어 (2026-10-12)
-  setTimeout(loadFirebase, 0); // 첫 화면이 그려진 뒤에
+  importMovedSettings();   // 아래에서 설정을 읽기 전에
+  migrateOldSettings();
+  replaceNav(null);        // 새로고침 전의 뒤로 가기 표시가 남아 있을 수 있어 비우고 시작한다
+  loadLocal();
+  renderSyncPanel();
+  renderTable();           // 첫 화면이 표 (2026-10-12)
+  setTimeout(loadFirebase, 0);   // 첫 화면이 그려진 뒤에
 
   // 서비스워커 등록 (오프라인 지원)
   if ('serviceWorker' in navigator) {

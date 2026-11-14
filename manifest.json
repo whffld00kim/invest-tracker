@@ -1,7 +1,7 @@
 {
   "name": "투자 지표 트래커",
   "short_name": "투자 트래커",
-  "description": "네이버 금융 지표 수기 입력 및 추이 분석",
+  "description": "금리·환율·주가지수·원자재 지표를 매일 받아 표와 그래프로 봅니다",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "any",

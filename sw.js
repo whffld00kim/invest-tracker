@@ -1,17 +1,16 @@
-const CACHE = 'invest-tracker-v29';   // v29: 옛 주소(github.io)는 새 주소로 바로 넘김 (2026-11-14)
+const CACHE = 'invest-tracker-v30';   // v30: 점검 수정 — 라이브러리를 앱과 함께 배포(vendor/), 기본 자료 파일 뺌 (2026-11-14)
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './initial_data.js',
   './icons/app-any-192.png',
   './icons/app-maskable-512.png',
+  './vendor/chart.umd.js',
+  './vendor/hammer.min.js',
+  './vendor/chartjs-plugin-zoom.min.js',
+  './vendor/Sortable.min.js',
   'https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js',
-  'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js',
-  'https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js',
-  'https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js',
-  'https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js',
 ];
 
 // 옛 주소(github.io)에서는 이 서비스워커가 일을 접는다 (2026-11-14 — index.html 맨 위 스크립트가 새 주소로 넘긴다).
@@ -62,8 +61,10 @@ self.addEventListener('activate', e => {
 // 앱 파일·라이브러리는 저장된 사본을 바로 돌려주고, 뒤에서 새 파일을 받아 캐시를 바꿔 둔다.
 // 그전엔 네트워크 우선이라 열 때마다 파일 아홉 개의 응답을 기다렸다 (2026-09-29 — 처음 열 때 느림).
 // ⚠ 그래서 앱을 고친 뒤 **첫 실행은 옛 화면, 두 번째 실행부터 새 화면**이다.
-// Firestore 통신(firestore.googleapis.com)은 건드리지 않는다
-const HOSTS = [self.location.host, 'www.gstatic.com', 'cdn.jsdelivr.net'];
+// Firestore 통신(firestore.googleapis.com)은 건드리지 않는다.
+// 2026-11-14: 내용을 볼 수 없는 응답(opaque)은 저장하지 않는다 — 오류 응답인지 가릴 수 없고, 하나에 저장 공간을 7MB 씩 잡았다.
+// 그래프 라이브러리는 이제 같은 주소(vendor/)에서 오고, Firebase(gstatic)는 앱이 CORS 로 부른다
+const HOSTS = [self.location.host, 'www.gstatic.com'];
 self.addEventListener('fetch', e => {
   if (RETIRED) return;   // 옛 주소: 아무것도 저장하지 않고 그대로 통신에 맡긴다
   const req = e.request;
@@ -74,7 +75,7 @@ self.addEventListener('fetch', e => {
     caches.open(CACHE).then(async cache => {
       const cached = await cache.match(req, { ignoreSearch: url.host === self.location.host });
       const fresh = fetch(req).then(res => {
-        if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
+        if (res && res.ok) cache.put(req, res.clone());
         return res;
       });
       if (cached) { e.waitUntil(fresh.catch(() => {})); return cached; }
