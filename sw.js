@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v28';   // v28: 홈 화면 아이콘 밤하늘 한 벌로 교체 (2026-10-29)
+const CACHE = 'invest-tracker-v29';   // v29: 옛 주소(github.io)는 새 주소로 바로 넘김 (2026-11-14)
 const ASSETS = [
   './',
   './index.html',
@@ -14,16 +14,42 @@ const ASSETS = [
   'https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js',
 ];
 
+// 옛 주소(github.io)에서는 이 서비스워커가 일을 접는다 (2026-11-14 — index.html 맨 위 스크립트가 새 주소로 넘긴다).
+// 옛 판이 깔려 있던 기기가 이 파일을 새로 받으면: 이 앱의 캐시를 지우고 → 등록을 풀고 → 열려 있는 창을 다시 불러온다.
+// 다시 불러온 index.html 이 새 주소로 넘긴다. 옛 판 화면에는 스스로 새로고침하는 코드가 없어서, 여기서 다시 불러 주지
+// 않으면 두 번째로 열 때에야 넘어간다(그 길도 그대로 된다 — 캐시가 없어 새 index.html 을 받는다)
+const RETIRED = /(^|\.)github\.io$/.test(self.location.hostname);
+
 // 설치 시 모든 리소스 캐시
 self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(ASSETS))
-  );
+  if (!RETIRED) {
+    e.waitUntil(
+      caches.open(CACHE).then(cache => cache.addAll(ASSETS))
+    );
+  }
   self.skipWaiting();
 });
 
 // 오래된 캐시 정리
 self.addEventListener('activate', e => {
+  if (RETIRED) {
+    e.waitUntil((async () => {
+      // 이 앱의 캐시만 지운다 (웹앱들이 github.io 한 주소를 나눠 써서 캐시 저장소가 하나다)
+      const keys = await caches.keys();
+      await Promise.all(keys.filter(k => k.startsWith('invest-tracker-')).map(k => caches.delete(k)));
+      await self.clients.claim();
+      const wins = await self.clients.matchAll({ type: 'window' });
+      await self.registration.unregister();
+      // 다시 부르는 것은 창마다 한 번뿐이다 — 주소에 moved= 가 이미 붙어 있으면 그만둔다. 다시 받은 index.html 이 아직 옛 판이면
+      // (배포가 퍼지는 몇 분 사이, 또는 방금 받아 둔 사본) 그 화면이 이 서비스워커를 또 등록해 끝없이 새로고침하게 된다.
+      // moved= 는 주소를 바꿔 브라우저가 간직한 옛 index.html 사본을 비켜 가는 구실도 한다
+      wins.forEach(c => {
+        if (/[?&]moved=/.test(c.url)) return;
+        try { c.navigate(c.url + (c.url.indexOf('?') < 0 ? '?' : '&') + 'moved=' + Date.now()).catch(() => {}); } catch (err) {}
+      });
+    })());
+    return;
+  }
   e.waitUntil(
     caches.keys().then(keys =>
       // 이 앱의 옛 캐시만 지운다 (웹앱들이 github.io 한 주소를 나눠 써서 캐시 저장소가 하나다)
@@ -39,6 +65,7 @@ self.addEventListener('activate', e => {
 // Firestore 통신(firestore.googleapis.com)은 건드리지 않는다
 const HOSTS = [self.location.host, 'www.gstatic.com', 'cdn.jsdelivr.net'];
 self.addEventListener('fetch', e => {
+  if (RETIRED) return;   // 옛 주소: 아무것도 저장하지 않고 그대로 통신에 맡긴다
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);

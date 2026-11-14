@@ -3,6 +3,43 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <script>
+  // 옛 주소(github.io) → 전용 주소 minsung-invest.web.app (2026-10-15 이전).
+  // 2026-11-14: 「새 주소로 이동」 띠만 띄우던 것을 바로 넘기도록 바꿨다 — 옛 주소는 다른 웹앱들과 저장소를 나눠 쓰는 주소인데
+  // 옛 판 앱이 거기서 통째로 돌고 있었다. 기기에만 있는 설정(지표 목록·지운 지표)은 종전 띠와 같은 방식(#move=)으로 실어 보내고,
+  // 새 주소가 한 번 받아 저장한다(이미 있는 값은 안 덮는다 — 아래 importMovedSettings).
+  // 동기화 키는 싣지 않는다 — 새 주소는 키가 없으면 매일 수집되는 문서(0000)에 붙는다. 옛 키를 실어 가면 4월에 멈춘 문서에 붙을 수 있다.
+  // 이 주소에 남은 이 앱의 것(기록 사본·서비스워커·캐시)은 지운다. 설정 두 칸은 남긴다(넘어가다 끊겨도 다음에 다시 실어 보낼 수 있게).
+  (function () {
+    if (!/(^|\.)github\.io$/.test(location.hostname)) return;
+    window.__investMoved = true;   // 아래 본문 스크립트의 시작(INIT)·서비스워커 등록이 이 표시를 보고 아무것도 하지 않는다
+    var data = {};
+    try {
+      ['invest_indicators_v1', 'invest_indicators_removed_v1'].forEach(function (k) { var v = localStorage.getItem(k); if (v !== null) data[k] = v; });
+      ['invest_tracker_v2', 'invest_tracker_v2_ver', 'gold_recalc_troy_v1', 'invest_sync_key', 'invest_sync_off'].forEach(function (k) { localStorage.removeItem(k); });
+    } catch (e) {}
+    var hash = '';
+    try {
+      if (Object.keys(data).length) hash = '#move=' + btoa(unescape(encodeURIComponent(JSON.stringify(data)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    } catch (e) {}
+    try { document.documentElement.style.visibility = 'hidden'; } catch (e) {}   // 넘어가기 전 빈 표가 비치지 않게
+    var go = function () { location.replace('https://minsung-invest.web.app/' + hash); };
+    try {
+      var jobs = [];
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+        jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+          return Promise.all(rs.filter(function (r) { return /\/invest-tracker\//.test(r.scope); }).map(function (r) { return r.unregister(); }));
+        }));
+      }
+      if (window.caches) {
+        jobs.push(caches.keys().then(function (ks) {
+          return Promise.all(ks.filter(function (k) { return k.indexOf('invest-tracker-') === 0; }).map(function (k) { return caches.delete(k); }));
+        }));
+      }
+      Promise.race([Promise.all(jobs), new Promise(function (r) { setTimeout(r, 1500); })]).then(go, go);
+    } catch (e) { go(); }
+  })();
+  </script>
   <title>투자 지표 트래커</title>
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#1d4ed8">
@@ -1820,10 +1857,10 @@ function migrateGoldRecalc() {
 
 // ── 주소 이전 (2026-10-15) ───────────────────────────────────────────
 // github.io 공용 주소(여러 웹앱이 보관함·설치 판정을 나눠 씀) → 전용 주소 https://minsung-invest.web.app
-// 동기화 키·지표 목록·지운 지표는 기기 localStorage 에만 있어 주소가 바뀌면 따라오지 않는다.
-// 옛 주소 맨 위 「새 주소로 이동」이 그 셋을 #move=… 에 담아 넘기고, 새 주소가 한 번 받아 저장한다(이미 있는 값은 안 덮음).
-// # 뒤는 서버로 가지 않는다. 받은 뒤엔 주소창에서 지운다
-const NEW_ORIGIN = 'https://minsung-invest.web.app/';
+// 지표 목록·지운 지표는 기기 localStorage 에만 있어 주소가 바뀌면 따라오지 않는다.
+// 옛 주소로 들어오면 맨 위(head) 스크립트가 그 둘을 #move=… 에 담아 바로 넘기고(2026-11-14 — 그전엔 「새 주소로 이동」 띠의 단추),
+// 새 주소가 한 번 받아 저장한다(이미 있는 값은 안 덮음). # 뒤는 서버로 가지 않는다. 받은 뒤엔 주소창에서 지운다.
+// 동기화 키는 옛 판의 띠 단추가 아직 실어 보낼 수 있어 받는 쪽엔 남겨 둔다
 const MOVE_KEYS = [SYNC_KEY_STORAGE, INDICATORS_STORAGE, REMOVED_STORAGE];
 // 링크로 들어온 값은 남이 만든 링크일 수도 있다. 전엔 검사 없이 저장해, 지표 id에 HTML을 심은
 // 링크 한 번으로 스크립트가 기기에 남아 매번 실행됐다 (2026-10-20 클라우드 점검 #2 — Playwright 재현)
@@ -1834,7 +1871,6 @@ const MOVE_VALID = {
     && /^[A-Za-z0-9_-]{1,40}$/.test(i.id) && typeof i.name === 'string' && i.name.length <= 30),
   [REMOVED_STORAGE]: v => _jsonArr(v, s => typeof s === 'string' && s.length <= 30),
 };
-function b64urlEncode(s) { return btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 function b64urlDecode(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return decodeURIComponent(escape(atob(s))); }
 function importMovedSettings() {
   const m = /^#move=([A-Za-z0-9_-]+)$/.exec(location.hash || '');
@@ -1851,32 +1887,23 @@ function importMovedSettings() {
   history.replaceState(null, '', location.pathname + location.search);
   if (n) setTimeout(() => showToast('옛 주소의 설정(동기화 키·지표 목록)을 가져왔습니다'), 800);
 }
-function showMoveBanner() {
-  if (!/(^|\.)github\.io$/.test(location.hostname)) return;
-  const bar = document.createElement('div');
-  bar.style.cssText = 'position:sticky;top:0;z-index:2000;background:#1d4ed8;color:#fff;padding:10px 12px;text-align:center;font-size:14px;line-height:1.5';
-  bar.innerHTML = '투자 트래커가 새 주소로 옮겼습니다 <button type="button" style="margin-left:8px;padding:4px 12px;border:0;border-radius:6px;background:#fff;color:#1d4ed8;font-weight:700;font-size:14px">새 주소로 이동</button>';
-  bar.querySelector('button').onclick = () => {
-    const data = {};
-    MOVE_KEYS.forEach(k => { const v = localStorage.getItem(k); if (v !== null) data[k] = v; });
-    location.href = NEW_ORIGIN + '#move=' + b64urlEncode(JSON.stringify(data));
-  };
-  document.body.prepend(bar);
-}
 importMovedSettings(); // 아래 initData·지표·동기화가 localStorage 를 읽기 전에
 
 // ── INIT ──────────────────────────────────────────────────────────────
-initData();
-migrateGoldRecalc(); // 트로이온스 공식으로 과거 데이터 일괄 재계산
-renderEntryFields(); // 입력 모달의 동적 필드 미리 생성
-renderHome();
-renderTable(40); // 첫 화면이 표 — 최근 40일 먼저, 나머지는 곧이어 (2026-10-12)
-setTimeout(loadFirebase, 0); // 첫 화면이 그려진 뒤에
-showMoveBanner();
+// 옛 주소(github.io)에서는 맨 위(head) 스크립트가 새 주소로 넘기는 중이다(window.__investMoved) — 앱을 띄우지 않는다.
+// 띄우면 방금 지운 기록 사본을 기본 자료로 다시 깔고, 서버에 붙고, 서비스워커를 다시 등록한다
+if (!window.__investMoved) {
+  initData();
+  migrateGoldRecalc(); // 트로이온스 공식으로 과거 데이터 일괄 재계산
+  renderEntryFields(); // 입력 모달의 동적 필드 미리 생성
+  renderHome();
+  renderTable(40); // 첫 화면이 표 — 최근 40일 먼저, 나머지는 곧이어 (2026-10-12)
+  setTimeout(loadFirebase, 0); // 첫 화면이 그려진 뒤에
 
-// 서비스워커 등록 (오프라인 지원)
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  // 서비스워커 등록 (오프라인 지원)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
 }
 </script>
 </body>
