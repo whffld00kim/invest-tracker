@@ -4,7 +4,7 @@
   "description": "금리·환율·주가지수·원자재 지표를 매일 받아 표와 그래프로 봅니다",
   "start_url": "./index.html",
   "display": "standalone",
-  "orientation": "any",
+  "orientation": "natural",
   "background_color": "#f1f5f9",
   "theme_color": "#1d4ed8",
   "icons": [

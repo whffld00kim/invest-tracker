@@ -1,8 +1,9 @@
-const CACHE = 'invest-tracker-v30';   // v30: 점검 수정 — 라이브러리를 앱과 함께 배포(vendor/), 기본 자료 파일 뺌 (2026-11-14)
+const CACHE = 'invest-tracker-v32';   // v32: 2026-11-24 탭만 가로 설정 파일(manifest-tab.json) —   // v31: 화면 방향 natural(폰 세로·태블릿 가로, 2026-11-20) —   // v30: 점검 수정 — 라이브러리를 앱과 함께 배포(vendor/), 기본 자료 파일 뺌 (2026-11-14)
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
+  './manifest-tab.json',
   './icons/app-any-192.png',
   './icons/app-maskable-512.png',
   './vendor/chart.umd.js',

@@ -1,0 +1,36 @@
+{
+  "name": "투자 지표 트래커",
+  "short_name": "투자 트래커",
+  "description": "금리·환율·주가지수·원자재 지표를 매일 받아 표와 그래프로 봅니다",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#f1f5f9",
+  "theme_color": "#1d4ed8",
+  "icons": [
+    {
+      "src": "./icons/app-any-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/app-any-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/app-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./icons/app-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
