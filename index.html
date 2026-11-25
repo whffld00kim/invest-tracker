@@ -226,6 +226,14 @@ html, body { overscroll-behavior-y: none; }
       border: 1px solid var(--border); padding: 0 12px;
       margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
     }
+    /* 옆 지표로 넘기는 단추 (2026-11-25) — 그래프 탭은 옆으로 밀기가 꺼져 있어, 목록을 열지 않고 훑어볼 길이 없었다 */
+    .select-wrap { padding: 0 4px; gap: 4px; }
+    .ind-step {
+      flex: 0 0 auto; width: 44px; height: 46px; border: none; background: transparent;
+      font-size: 24px; line-height: 1; color: var(--primary); cursor: pointer; border-radius: 8px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .ind-step:active { background: var(--primary-light); }
     .select-wrap label { font-size: 13px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
     select { flex: 1; min-height: 46px; border: none; background: transparent; font-size: 15px; font-weight: 600; color: var(--text); outline: none; cursor: pointer; font-family: inherit; }
     /* 그래프가 남는 높이를 채운다 (2026-11-14 — 그전엔 300px 고정이라 폰은 아래가 비었다). 화면이 낮으면 줄이지 않고 탭이 스크롤된다 */
@@ -237,7 +245,16 @@ html, body { overscroll-behavior-y: none; }
     .chart-hint { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 8px; }
     .latest-val { display: flex; align-items: baseline; gap: 8px; }
     .latest-num { font-size: 26px; font-weight: 700; }
-    .latest-label { font-size: 13px; color: var(--text-muted); }
+    .latest-label { font-size: 13px; color: var(--text-muted); white-space: nowrap; }
+    /* 보이는 구간과 그 사이의 변화 (2026-11-25) */
+    .span-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; margin-bottom: 8px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+    .span-row .peak-diff { font-size: 13px; }
+    /* 폰: 기간 단추를 늘 한 줄 가득 — 그전엔 지표의 단위 글자 길이에 따라 한 줄/두 줄로 바뀌어 그래프 높이가 43px 씩 들쑥날쑥했다 */
+    @media (max-width: 599px) {
+      .chart-top { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 8px; }
+      .chart-top .seg { display: flex; }
+      .chart-top .seg button { flex: 1; }
+    }
 
     /* 기간 최고·최저 */
     .peak-row {
@@ -460,17 +477,18 @@ html, body { overscroll-behavior-y: none; }
         display: block;
         overflow-y: auto; min-height: 0;
         background: var(--card); border-radius: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.08);
-        padding: 8px 12px 12px;
+        padding: 6px 12px 10px;
       }
       .picker-title {
         font-size: 12px; font-weight: 700; color: var(--primary);
-        padding: 8px 4px 5px; border-bottom: 2px solid var(--primary-light); margin-bottom: 2px;
+        padding: 6px 4px 4px; border-bottom: 2px solid var(--primary-light); margin-bottom: 1px;
       }
-      .picker-group { display: flex; flex-wrap: wrap; gap: 6px; }
+      /* 단추 34px·틈 5px — 지표 26개가 탭 높이에 다 들어온다 (2026-11-25, 그전엔 38px·6px 라 마지막 줄이 화면 밖이었다) */
+      .picker-group { display: flex; flex-wrap: wrap; gap: 5px; }
       .picker-group .picker-title { flex: 0 0 100%; }
       .picker-btn {
         flex: 1 1 auto;
-        padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+        padding: 0 10px; min-height: 34px; border: 1px solid var(--border); border-radius: 8px;
         background: var(--bg); color: var(--text);
         font-family: inherit; font-size: 14px; font-weight: 500; cursor: pointer;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -484,6 +502,8 @@ html, body { overscroll-behavior-y: none; }
       .peak-label, .peak-date { font-size: 13px; }
       .peak-val { font-size: 17px; }
       .peak-diff { font-size: 14px; }
+      .span-row { font-size: 13px; }
+      .span-row .peak-diff { font-size: 14px; }
       .chart-canvas-wrap { min-height: 240px; }
       .chart-hint { font-size: 12px; }
       .no-chart { flex: 1; display: flex; align-items: center; justify-content: center; background: var(--card); border-radius: 14px; }
@@ -567,8 +587,10 @@ html, body { overscroll-behavior-y: none; }
     <!-- 태블릿 가로 전용 (2026-09-28): 드롭다운 대신 왼쪽 지표 목록. 폰에서는 CSS로 숨긴다 -->
     <div class="ind-picker" id="ind-picker"></div>
     <div class="select-wrap">
+      <button type="button" class="ind-step" id="ind-prev" aria-label="이전 지표" title="이전 지표">‹</button>
       <label for="indicator-select">지표</label>
       <select id="indicator-select"></select>
+      <button type="button" class="ind-step" id="ind-next" aria-label="다음 지표" title="다음 지표">›</button>
     </div>
     <div id="chart-area">
       <div class="no-chart">지표를 선택하면 그래프가 표시됩니다.</div>
@@ -618,7 +640,7 @@ html, body { overscroll-behavior-y: none; }
 
 <script>
 'use strict';
-const APP_VER = 'v33 · 2026-11-25';
+const APP_VER = 'v34 · 2026-11-25';
 
 // ── 저장 칸 (이 기기의 localStorage) ──────────────────────────────────
 const K = {
@@ -1122,6 +1144,8 @@ document.getElementById('btn-backup').addEventListener('click', () => {
 const RANGES = { '1m': '1개월', '3m': '3개월', '1y': '1년', all: '전체' };
 const graphRange = () => { const r = store.get(K.range); return RANGES[r] ? r : 'all'; };
 let _graphKey = '', _graphSel = '', chartInstance = null, _chartDates = [];
+let _chartWait = 0, _chartTries = 0;      // 그래프 라이브러리를 기다리는 중
+let _applying = false, _gesturing = false, _yRaf = 0;   // 기간 단추가 범위를 맞추는 중 · 손으로 끌거나 확대하는 중 · 세로축 맞추기 예약
 function renderGraphTab() {
   const list = shownIndicators();
   const gkey = tableKey() + '|' + isTablet() + '|' + _graphSel;
@@ -1130,8 +1154,13 @@ function renderGraphTab() {
   // 고를 지표: 방금 고른 것 → 마지막에 본 것 → 목록의 첫 지표 (2026-11-14 — 폰에서는 열 때마다 빈 화면에서 골라야 했다)
   const names = list.map(i => i.name);
   let cur = [_graphSel, sel.value, store.get(K.last)].find(n => n && names.includes(n)) || names[0] || '';
+  // 고르는 칸도 묶음별로 (2026-11-25 — 그전엔 26개가 한 줄 목록이었다). 순서는 설정의 순서 그대로, 같은 묶음이 이어지는 동안만 묶는다
   sel.innerHTML = '';
-  for (const n of names) { const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o); }
+  let og = null, ogName = null;
+  for (const i of list) {
+    if (i.group !== ogName) { og = document.createElement('optgroup'); og.label = i.group; ogName = i.group; sel.appendChild(og); }
+    const o = document.createElement('option'); o.value = i.name; o.textContent = i.name; og.appendChild(o);
+  }
   sel.value = cur;
   _graphSel = cur;
   _graphKey = tableKey() + '|' + isTablet() + '|' + _graphSel;
@@ -1147,6 +1176,14 @@ function pickIndicator(name) {
   renderChart(name);
 }
 document.getElementById('indicator-select').addEventListener('change', e => { if (e.target.value) pickIndicator(e.target.value); });
+// 이전·다음 지표 (2026-11-25) — 보이는 지표 순서대로 돌고, 끝에서 처음으로 이어진다
+function stepIndicator(dir) {
+  const names = shownIndicators().map(i => i.name); if (!names.length) return;
+  const at = names.indexOf(_graphSel);
+  pickIndicator(names[((at < 0 ? 0 : at + dir) + names.length) % names.length]);
+}
+document.getElementById('ind-prev').addEventListener('click', () => stepIndicator(-1));
+document.getElementById('ind-next').addEventListener('click', () => stepIndicator(1));
 // 태블릿 가로: 왼쪽 지표 목록 (묶음별)
 function renderPicker(list) {
   const box = document.getElementById('ind-picker');
@@ -1158,20 +1195,29 @@ function renderPicker(list) {
   markPicker(_graphSel);
 }
 function markPicker(name) {
-  document.querySelectorAll('#ind-picker .picker-btn').forEach(b => b.classList.toggle('active', b.dataset.name === name));
+  let act = null;
+  document.querySelectorAll('#ind-picker .picker-btn').forEach(b => { const on = b.dataset.name === name; b.classList.toggle('active', on); if (on) act = b; });
+  // 고른 지표가 목록의 화면 밖에 있으면 보이는 데까지 민다 (표에서 이름을 눌러 넘어온 경우 — 2026-11-25)
+  if (act && isTablet()) { try { act.scrollIntoView({ block: 'nearest' }); } catch (e) {} }
 }
 document.getElementById('ind-picker').addEventListener('click', e => {
   const btn = e.target.closest('.picker-btn'); if (btn) pickIndicator(btn.dataset.name);
 });
 
-function renderChart(name) {
+function renderChart(name, again) {
   const area = document.getElementById('chart-area');
   if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-  if (typeof Chart === 'undefined') {   // 라이브러리(defer)가 아직 안 왔거나 못 받았다 — 곧 다시 해 본다
-    area.innerHTML = '<div class="no-chart">그래프를 준비하는 중입니다…</div>';
-    setTimeout(() => { if (activeTab() === 'graph' && !chartInstance && typeof Chart !== 'undefined') renderChart(_graphSel); }, 400);
+  clearTimeout(_chartWait); cancelAnimationFrame(_yRaf); _yRaf = 0; _gesturing = false;
+  if (!again) _chartTries = 0;
+  if (typeof Chart === 'undefined') {   // 라이브러리(defer)가 아직 안 왔거나 못 받았다 — 올 때까지 다시 해 본다
+    // 2026-11-25: 그전엔 0.4초 뒤 한 번만 다시 해 봐서, 그보다 늦게 오면 「준비하는 중」에 멈춰 있었다
+    if (_chartTries++ < 60) {
+      area.innerHTML = '<div class="no-chart">그래프를 준비하는 중입니다…</div>';
+      _chartWait = setTimeout(() => { if (activeTab() === 'graph' && !chartInstance) renderChart(_graphSel, true); }, 400);
+    } else area.innerHTML = '<div class="no-chart">그래프 프로그램을 받지 못했습니다.<br>인터넷 연결을 확인한 뒤 그래프 탭을 다시 눌러 주세요.</div>';
     return;
   }
+  _chartTries = 0;
   const ind = indOf(name), s = series(ind);
   // 오래된 날이 왼쪽. 그 지표의 값이 처음 나오는 날부터만 보인다
   let first = -1;
@@ -1179,20 +1225,31 @@ function renderChart(name) {
   const dates = [], values = [];
   for (let i = first; i >= 0; i--) { dates.push(DATES[i]); values.push(valid(ind, s[i]) ? s[i] : null); }
   _chartDates = dates;
+  // 그릴 값이 하나도 없으면(기록이 전부 빈 값) 빈 그래프 대신 알린다 (2026-11-25)
+  if (!values.length) { area.innerHTML = `<div class="no-chart">「${esc(name)}」은(는) 아직 그릴 값이 없습니다.</div>`; return; }
   const r = graphRange();
   area.innerHTML = `
     <div class="chart-card">
       <div class="chart-top">
-        <div class="latest-val"><span class="latest-num" id="latest-num">-</span><span class="latest-label">최근값${ind.unit ? ' · ' + esc(ind.unit) : ''}</span></div>
+        <div class="latest-val"><span class="latest-num" id="latest-num">-</span><span class="latest-label">최근값 <span id="latest-date"></span>${ind.unit ? ' · ' + esc(ind.unit) : ''}</span></div>
         <div class="seg" id="range-seg" role="group" aria-label="그래프 기간">${Object.entries(RANGES).map(([k, t]) => `<button type="button" data-r="${k}" class="${k === r ? 'active' : ''}">${t}</button>`).join('')}</div>
       </div>
+      <div class="span-row"><span id="span-text"></span><span class="peak-diff" id="span-diff"></span></div>
       <div class="peak-row"><span class="peak-label">🏆 기간 최고</span><span class="peak-val" id="peak-val">-</span><span class="peak-date" id="peak-date"></span><span class="peak-diff" id="peak-diff"></span></div>
       <div class="peak-row low"><span class="peak-label">🔻 기간 최저</span><span class="peak-val" id="low-val">-</span><span class="peak-date" id="low-date"></span><span class="peak-diff" id="low-diff"></span></div>
       <div class="chart-canvas-wrap"><canvas id="my-chart"></canvas></div>
-      <p class="chart-hint">두 손가락: 확대/축소 · 끌기: 이동 · 기간 단추를 다시 누르면 처음 범위로</p>
+      <p class="chart-hint">누르면 그날 값 · 끌면 이동 · 두 손가락으로 확대/축소</p>
     </div>`;
-  if (!values.length) return;
   const tickSize = isTablet() ? 13 : 11;   // 태블릿 가로: 팔 길이에서 보이게 조금 키운다
+  const unit = ind.unit ? (ind.unit === '%' ? '%' : ' ' + ind.unit) : '';
+  // 누른 날을 가리키는 세로 점선
+  const crosshair = { id: 'crosshair', afterDatasetsDraw(chart) {
+    const a = chart.tooltip && chart.tooltip.getActiveElements ? chart.tooltip.getActiveElements() : [];
+    if (!a.length || _gesturing) return;
+    const x = a[0].element.x, ar = chart.chartArea, c = chart.ctx;
+    c.save(); c.beginPath(); c.setLineDash([4, 3]); c.lineWidth = 1; c.strokeStyle = 'rgba(100,116,139,.7)';
+    c.moveTo(x, ar.top); c.lineTo(x, ar.bottom); c.stroke(); c.restore();
+  } };
   chartInstance = new Chart(document.getElementById('my-chart').getContext('2d'), {
     type: 'line',
     data: {
@@ -1201,27 +1258,47 @@ function renderChart(name) {
         label: name, data: values,
         borderColor: '#1d4ed8', backgroundColor: 'rgba(29,78,216,0.08)', borderWidth: 2,
         pointBackgroundColor: '#1d4ed8', pointRadius: 0, pointHoverRadius: 5,
-        fill: true, tension: 0.3, spanGaps: true,
+        // 값과 값 사이는 곧은 선으로 잇는다 (2026-11-25 — 그전엔 둥글린 선(tension 0.3)이라 확대하면 선이 「기간 최고」보다 높이 부풀었다)
+        fill: true, tension: 0, spanGaps: true,
       }]
     },
+    plugins: [crosshair],
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
       interaction: { mode: 'index', intersect: false },
       scales: {
-        x: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: tickSize }, maxRotation: 45, maxTicksLimit: 12 } },
+        // 가로축 눈금: 기울이지 않고, 보이는 구간이 짧으면 「월-일」, 길면 「연.월」 (그전엔 「04-05, 23」 꼴 12개가 45도로 누워 폰에서 축이 56px 을 먹었다)
+        x: { grid: { color: '#f1f5f9' },
+          ticks: { color: '#64748b', font: { size: tickSize }, maxRotation: 0, autoSkipPadding: 10, maxTicksLimit: 12,
+            callback(val) { const d = _chartDates[val]; if (!d) return ''; return (this.max - this.min) <= 70 ? d.slice(5) : d.slice(2, 4) + '.' + d.slice(5, 7); } },
+          // 같은 달이 잇달아 찍히면 뒤의 것은 비운다 (눈금을 솎아 낸 뒤에 — afterUpdate)
+          afterUpdate(scale) { let prev = null; scale.ticks.forEach(t => { if (t.label === prev) t.label = ''; else if (t.label) prev = t.label; }); } },
         // includeBounds:false — 축 양 끝에 9,861.09 같은 어중간한 눈금이 따로 찍히던 것을 뺀다
-        y: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: tickSize }, includeBounds: false, callback: v => fmtNum(v, ind) } }
+        y: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: tickSize }, includeBounds: false, callback(v) { return fmtAxis(v, ind, this.max); } } }
       },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: ctx => `${name}: ${fmtNum(ctx.parsed.y, ind)}` } },
+        // 값 창: 날짜(요일) · 값 · 직전 기록보다 얼마나. 끌거나 확대하는 동안에는 띄우지 않는다
+        tooltip: { displayColors: false, filter: () => !_gesturing, callbacks: {
+          title: items => { const d = items.length ? _chartDates[items[0].dataIndex] : ''; return d ? `${d} (${dowOf(d)})` : ''; },
+          label: ctx => fmtNum(ctx.parsed.y, ind) + unit,
+          afterLabel: ctx => {
+            let j = ctx.dataIndex - 1; while (j >= 0 && values[j] === null) j--;
+            const dl = j >= 0 ? fmtDelta(ind, ctx.parsed.y, values[j], 2) : null;
+            return dl ? `직전 기록보다 ${dl.text}` : '';
+          },
+        } },
         zoom: {
-          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x', onZoomComplete({ chart }) { adjustY(chart, ind); } },
-          pan:  { enabled: true, mode: 'x', onPanComplete({ chart }) { adjustY(chart, ind); } }
+          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x',
+            onZoomStart() { gestureStart(); }, onZoom({ chart }) { queueY(chart, ind); }, onZoomComplete({ chart }) { gestureEnd(chart, ind); } },
+          pan:  { enabled: true, mode: 'x',
+            onPanStart() { gestureStart(); }, onPan({ chart }) { queueY(chart, ind); }, onPanComplete({ chart }) { gestureEnd(chart, ind); } }
         }
       }
     }
   });
+  // 새로 손을 대면 「끄는 중」 표시를 푼다 (끌기가 중간에 끊겨 끝났다는 알림이 안 온 경우에도 값 창이 다시 뜨게)
+  chartInstance.canvas.addEventListener('pointerdown', () => { _gesturing = false; }, true);
   applyRange(ind);
   document.getElementById('range-seg').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
@@ -1234,24 +1311,66 @@ function renderChart(name) {
 function applyRange(ind) {
   const chart = chartInstance; if (!chart) return;
   const n = _chartDates.length, r = graphRange();
-  if (r === 'all' || n < 2) chart.resetZoom('none');
-  else {
-    const cut = shiftDate(_chartDates[n - 1], r === '1m' ? 'm' : r === '3m' ? 'q' : 'y');
-    let min = _chartDates.findIndex(d => d >= cut); if (min < 0) min = 0;
-    if (min > n - 2) min = Math.max(0, n - 2);
-    chart.zoomScale('x', { min, max: n - 1 }, 'none');
-  }
+  _applying = true;   // 아래 두 호출도 「확대가 끝났다」고 알려 온다 — 손으로 한 것과 가린다
+  try {
+    if (r === 'all' || n < 2) chart.resetZoom('none');
+    else {
+      const cut = shiftDate(_chartDates[n - 1], r === '1m' ? 'm' : r === '3m' ? 'q' : 'y');
+      let min = _chartDates.findIndex(d => d >= cut); if (min < 0) min = 0;
+      if (min > n - 2) min = Math.max(0, n - 2);
+      chart.zoomScale('x', { min, max: n - 1 }, 'none');
+    }
+  } finally { _applying = false; }
+  _gesturing = false;
+  document.querySelectorAll('#range-seg button').forEach(x => x.classList.toggle('active', x.dataset.r === r));
   adjustY(chart, ind);
+  _rangeWin = winOf(chart);
+}
+// ── 손으로 끌기·확대 (2026-11-25) ──
+let _rangeWin = '';   // 기간 단추가 맞춰 둔 범위 — 손으로 범위를 바꾸면 단추의 선택 표시를 푼다
+const winOf = chart => { const xs = chart.scales.x; return xs ? Math.round(xs.min) + '~' + Math.round(xs.max) : ''; };
+function hideTip(chart, force) {
+  if (!chart || !chart.tooltip) return;
+  if (!force && !chart.getActiveElements().length && !chart.tooltip.opacity) return;
+  try { chart.setActiveElements([]); chart.tooltip.setActiveElements([], { x: 0, y: 0 }); chart.update('none'); } catch (e) {}
+}
+function gestureStart() { if (_applying) return; _gesturing = true; hideTip(chartInstance); }
+// 끄는 동안에도 세로축이 따라온다 (그전엔 손을 떼야 맞춰져, 끄는 동안 선이 화면 위아래로 잘렸다). 한 화면(프레임)에 한 번만
+function queueY(chart, ind) {
+  if (_applying || _yRaf) return;
+  _yRaf = requestAnimationFrame(() => { _yRaf = 0; if (chart === chartInstance) adjustY(chart, ind); });
+}
+function gestureEnd(chart, ind) {
+  if (_applying) return;
+  _gesturing = false;
+  cancelAnimationFrame(_yRaf); _yRaf = 0;
+  if (chart !== chartInstance) return;
+  adjustY(chart, ind);
+  hideTip(chart, true);   // 다시 그릴 때 마지막에 닿았던 자리의 값 창이 되살아나지 않게 (확대를 끝낸 손가락 자리에 창이 떴다)
+  // 범위가 기간 단추가 맞춘 것과 달라졌으면 단추 선택을 푼다 — 「3개월」이 켜진 채 닷새치를 보고 있는 일이 없게
+  if (winOf(chart) !== _rangeWin) document.querySelectorAll('#range-seg button.active').forEach(b => b.classList.remove('active'));
+}
+// 그래프 밖을 누르면 값 창을 닫는다 (그전엔 한 번 뜨면 지표를 바꿀 때까지 남았다)
+document.addEventListener('pointerdown', e => { if (chartInstance && e.target !== chartInstance.canvas) hideTip(chartInstance); }, true);
+// 세로축 눈금: 값이 큰 지표는 억·만 단위로 줄여 적는다(「180,000,000」→「1.8억」) — 폰에서 축이 그래프 폭의 1/5 을 먹었다.
+// 눈금만 줄인다. 최근값·최고·최저·값 창은 기록 그대로 적는다
+const _NF3 = new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 3 });
+function fmtAxis(v, ind, top) {
+  if (ind.digits != null || ind.point) return fmtNum(v, ind);
+  const a = Math.abs(top);
+  if (a >= 1e8) return _NF3.format(+(v / 1e8).toFixed(3)) + '억';
+  if (a >= 1e6) return _NF[1].format(+(v / 1e4).toFixed(2)) + '만';
+  return fmtNum(v, ind);
 }
 // 보이는 구간에 맞춰 세로축을 다시 잡고, 그 구간의 최고·최저를 적는다
 function adjustY(chart, ind) {
   const ds = chart.data.datasets[0].data, xs = chart.scales.x;
   if (!xs || xs.min == null || xs.max == null || Number.isNaN(xs.min) || Number.isNaN(xs.max)) return;
   const minIdx = Math.max(0, Math.floor(xs.min)), maxIdx = Math.min(ds.length - 1, Math.ceil(xs.max));
-  let mn = Infinity, mx = -Infinity, hi = -1, lo = -1, count = 0;
+  let mn = Infinity, mx = -Infinity, hi = -1, lo = -1, count = 0, fi = -1, li = -1;
   for (let i = minIdx; i <= maxIdx; i++) {
     const v = ds[i]; if (v === null) continue;
-    count++;
+    count++; if (fi < 0) fi = i; li = i;
     if (v > mx) { mx = v; hi = i; }
     if (v < mn) { mn = v; lo = i; }
   }
@@ -1259,17 +1378,31 @@ function adjustY(chart, ind) {
   const padY = (mx - mn) * 0.1 || Math.abs(mn) * 0.05 || 1;
   chart.options.scales.y.min = mn - padY;
   chart.options.scales.y.max = mx + padY;
-  chart.data.datasets[0].pointRadius = count <= 60 ? 3 : 0;
-  chart.update('none');
+  // 보이는 값이 60개 이하일 때만 점을 찍는다. Chart.js 는 update('none') 에서 점의 꾸밈을 다시 읽지 않아서, 반지름이 바뀔 때는
+  // 기본 방식으로 고쳐 그린다 (2026-11-25 — 그전엔 그래프를 만들 때의 기간으로 굳어, 「1개월」에서 연 지표를 「전체」로 바꾸면
+  // 점 880개가 다 찍혀 선이 뭉개지고, 반대로 「전체」에서 연 뒤 「1개월」로 가면 점이 안 보였다)
+  const dset = chart.data.datasets[0], pr = count <= 60 ? 3 : 0;
+  if (dset.pointRadius !== pr) { dset.pointRadius = pr; chart.update(); } else chart.update('none');
   // 현재 = 전체 기록의 마지막 값. 고점·저점 대비는 「지금이 그때보다 얼마나」로 적는다 — 금리류는 %p
   // (2026-11-14: 그전엔 (최고−현재)÷현재 라서 현재가 0 근처·음수인 금 할인률에 「현재 대비 −4183.3%」가 나왔다)
-  let latest = null; for (let i = ds.length - 1; i >= 0; i--) if (ds[i] !== null) { latest = ds[i]; break; }
+  let latest = null, latestIdx = -1; for (let i = ds.length - 1; i >= 0; i--) if (ds[i] !== null) { latest = ds[i]; latestIdx = i; break; }
   const put = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; return el; };
   put('latest-num', latest === null ? '-' : fmtNum(latest, ind));
+  put('latest-date', latestIdx >= 0 ? fmtDate(_chartDates[latestIdx]) : '');
+  // 보이는 구간(첫 값의 날 ~ 마지막 값의 날 · 값이 있는 날 수)과, 그 사이의 변화(마지막 값이 첫 값보다 얼마나 — 금리류는 %p)
+  put('span-text', `${fmtDate(_chartDates[fi])} ~ ${fmtDate(_chartDates[li])} · ${count.toLocaleString()}일`);
+  const sp = document.getElementById('span-diff');
+  if (sp) {
+    const d = count > 1 ? fmtDelta(ind, ds[li], ds[fi], 1) : null;
+    sp.textContent = d ? `이 구간 ${d.text}` : '';
+    sp.className = 'peak-diff ' + (d ? d.cls : '');
+  }
   const row = (pre, idx, v, word) => {
     put(pre + '-val', fmtNum(v, ind));
     put(pre + '-date', _chartDates[idx] ? fmtDate(_chartDates[idx]) : '');
     const el = document.getElementById(pre + '-diff'); if (!el) return;
+    // 지금 값이 바로 그 고점·저점이면 「0.0%」 대신 그렇다고 적는다
+    if (latest !== null && latest === v) { el.textContent = `지금이 ${word}`; el.className = 'peak-diff'; return; }
     const d = latest === null ? null : fmtDelta(ind, latest, v, 1);
     el.textContent = d ? `${word} 대비 ${d.text}` : '';
     el.className = 'peak-diff ' + (d ? d.cls : '');
