@@ -210,6 +210,9 @@ html, body { overscroll-behavior-y: none; }
     .nm-br::after { content: '\A'; white-space: pre; }
     tr:hover td { background: var(--primary-light); }
     tr:hover td:first-child { background: var(--primary-light); }
+    /* 지표 이름 칸을 누르면 그 지표 그래프로 (2026-11-25) */
+    td.nm-link { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    td.nm-link:active { background: var(--primary-light); }
     /* 칸 아래 줄: 직전 기록일 대비 차이 (변화율) — 오르면 빨강, 내리면 파랑 (2026-10-12) */
     td .chg { display: block; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
     td .chg.up { color: var(--up); }
@@ -615,7 +618,7 @@ html, body { overscroll-behavior-y: none; }
 
 <script>
 'use strict';
-const APP_VER = 'v32 · 2026-11-24';
+const APP_VER = 'v33 · 2026-11-25';
 
 // ── 저장 칸 (이 기기의 localStorage) ──────────────────────────────────
 const K = {
@@ -998,7 +1001,7 @@ function renderTable() {
   // 이름이 긴 비율 지표는 빗금 뒤에서 줄을 바꾼다 (첫 칸이 넓어지지 않게 — CSS .nm-br)
   const nameHtml = n => esc(n).replace(/\//g, '/<span class="nm-br"></span>');
   wrap.innerHTML = '<table><thead><tr><th>지표</th></tr></thead><tbody>' +
-    rows.map(r => `<tr><td>${nameHtml(r.ind.name)}</td></tr>`).join('') + '</tbody></table>';
+    rows.map(r => `<tr><td class="nm-link" data-name="${esc(r.ind.name)}">${nameHtml(r.ind.name)}</td></tr>`).join('') + '</tbody></table>';
   wrap.scrollLeft = 0;
   appendTableCols(TABLE_CHUNK);
 }
@@ -1027,6 +1030,13 @@ document.getElementById('table-wrap').addEventListener('scroll', () => {
     while (_tbl && _tbl.cols < DATES.length && wrap.scrollLeft + wrap.clientWidth * 2.5 > wrap.scrollWidth && guard++ < 6) appendTableCols(TABLE_CHUNK);
   });
 }, { passive: true });
+// 지표 이름 칸을 누르면 그 지표 그래프로 (2026-11-25 — 데이터 탭 최근값 칸과 같은 방식)
+document.getElementById('table-wrap').addEventListener('click', e => {
+  const td = e.target.closest('td.nm-link'); if (!td) return;
+  store.set(K.last, td.dataset.name);
+  _graphSel = td.dataset.name;
+  goTab('graph');
+});
 
 // ── 데이터 탭: 최근값 판 ──────────────────────────────────────────────
 // 견줄 시점은 볼트 「현황.md」와 같은 식이다: 가장 최근 기록일에서 거슬러 올라가, 그 날짜 이전의 가장 가까운 기록값

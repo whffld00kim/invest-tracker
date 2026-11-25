@@ -1,4 +1,4 @@
-const CACHE = 'invest-tracker-v32';   // v32: 2026-11-24 탭만 가로 설정 파일(manifest-tab.json) —   // v31: 화면 방향 natural(폰 세로·태블릿 가로, 2026-11-20) —   // v30: 점검 수정 — 라이브러리를 앱과 함께 배포(vendor/), 기본 자료 파일 뺌 (2026-11-14)
+const CACHE = 'invest-tracker-v33';   // v33: 2026-11-25 표 탭 지표 이름을 누르면 그 지표 그래프로 —   // v32: 2026-11-24 탭만 가로 설정 파일(manifest-tab.json) —   // v31: 화면 방향 natural(폰 세로·태블릿 가로, 2026-11-20) —   // v30: 점검 수정 — 라이브러리를 앱과 함께 배포(vendor/), 기본 자료 파일 뺌 (2026-11-14)
 const ASSETS = [
   './',
   './index.html',
