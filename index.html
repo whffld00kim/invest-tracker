@@ -640,7 +640,7 @@ html, body { overscroll-behavior-y: none; }
 
 <script>
 'use strict';
-const APP_VER = 'v34 · 2026-11-25';
+const APP_VER = 'v35 · 2026-11-27';
 
 // ── 저장 칸 (이 기기의 localStorage) ──────────────────────────────────
 const K = {
@@ -697,8 +697,6 @@ const DEFAULT_INDICATORS = [
   { name: '삼성우비율',  group: '가상자산/주식', digits: 4, nochg: true, calc: '삼성전자우 ÷ 삼성전자' },
   { name: 'SK하이닉스',  group: '가상자산/주식', unit: '원' },
   { name: '에이피알',    group: '가상자산/주식', unit: '원' },
-  { name: '에이피알/삼성전자',   group: '가상자산/주식', digits: 4, nochg: true, ratio: ['에이피알', '삼성전자'], calc: '에이피알 ÷ 삼성전자' },
-  { name: '에이피알/하이닉스',   group: '가상자산/주식', digits: 4, nochg: true, ratio: ['에이피알', 'SK하이닉스'], calc: '에이피알 ÷ SK하이닉스' },
 ];
 const GROUP_EMOJI = { '금리': '📉', '환율': '💱', '주가지수': '📊', '원자재': '🪙', '가상자산/주식': '₿', '기타': '📌' };
 

@@ -155,8 +155,6 @@ const INDICATORS = [
   { name: '삼성우비율',  group: '가상자산/주식', digits: 4, nochg: true, derived: true, calc: '삼성전자우 ÷ 삼성전자' },
   { name: 'SK하이닉스',  group: '가상자산/주식', unit: '원', zone: 'kr', get: naverStock('000660') },   // 2026-11-14 추가
   { name: '에이피알',    group: '가상자산/주식', unit: '원', zone: 'kr', get: naverStock('278470') },
-  { name: '에이피알/삼성전자', group: '가상자산/주식', digits: 4, nochg: true, ratio: ['에이피알', '삼성전자'], calc: '에이피알 ÷ 삼성전자' },
-  { name: '에이피알/하이닉스', group: '가상자산/주식', digits: 4, nochg: true, ratio: ['에이피알', 'SK하이닉스'], calc: '에이피알 ÷ SK하이닉스' },
 ];
 // [이름, 시장, 수집 함수]
 const SOURCES = INDICATORS.filter(i => i.get).map(i => [i.name, i.zone, i.get]);
